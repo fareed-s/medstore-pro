@@ -1,48 +1,64 @@
 version: '3.8'
 
 services:
-  mongodb:
+  # MongoDB for MedStore Pro (separate from earning platform's mongo)
+  mongo-medstore:
     image: mongo:7
-    container_name: medstore-mongo
-    restart: unless-stopped
-    ports:
-      - '27017:27017'
-    volumes:
-      - mongo-data:/data/db
+    container_name: medstore-mongodb
+    restart: always
     environment:
-      MONGO_INITDB_DATABASE: medstore_pro
+      MONGO_INITDB_ROOT_USERNAME: medstore_admin
+      MONGO_INITDB_ROOT_PASSWORD: MedStr0ng_Pass_2025
+      MONGO_INITDB_DATABASE: medstore-pro
+    volumes:
+      - medstore_mongo_data:/data/db
+    ports:
+      - "27018:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - medstore-network
 
+  # Backend API
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: medstore-api
-    restart: unless-stopped
-    ports:
-      - '5000:5000'
+    container_name: medstore-backend
+    restart: always
     depends_on:
-      - mongodb
+      mongo-medstore:
+        condition: service_healthy
     environment:
-      PORT: 5000
-      NODE_ENV: production
-      MONGODB_URI: mongodb://mongodb:27017/medstore_pro
-      JWT_SECRET: ${JWT_SECRET:-medstore_pro_super_secret_key_change_in_production}
-      JWT_EXPIRE: 7d
-      CLIENT_URL: http://localhost
-    volumes:
-      - uploads:/app/uploads
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: medstore-web
-    restart: unless-stopped
+      - NODE_ENV=production
+      - PORT=5000
+      - MONGODB_URI=mongodb://medstore_admin:MedStr0ng_Pass_2025@mongo-medstore:27017/medstore-pro?authSource=admin
+      - JWT_SECRET=xK9mP2vL8qR5nW3jF7hT1bY6cA0dE4gU8sI2oN5rV9wJ3kM7pQ1tZ4fH6yD8
+      - JWT_EXPIRE=7d
+      - JWT_COOKIE_EXPIRE=7
+      - CORS_ORIGIN=https://medstore-pro.vercel.app
     ports:
-      - '80:80'
-    depends_on:
-      - backend
+      - "5001:5000"
+    volumes:
+      - medstore_uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5000/api/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - medstore-network
 
 volumes:
-  mongo-data:
-  uploads:
+  medstore_mongo_data:
+    name: medstore_mongo_data
+  medstore_uploads:
+    name: medstore_uploads
+
+networks:
+  medstore-network:
+    name: medstore-network
+    driver: bridge
