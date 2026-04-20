@@ -1,0 +1,10 @@
+const router = require('express').Router();
+const { protect, authorize } = require('../middleware/auth');
+const ctrl = require('../controllers/transfer.controller');
+router.use(protect);
+router.get('/', ctrl.getTransfers);
+router.post('/', authorize('SuperAdmin', 'StoreAdmin'), ctrl.createTransfer);
+router.post('/:id/approve', authorize('SuperAdmin', 'StoreAdmin'), ctrl.approveTransfer);
+router.post('/:id/complete', authorize('SuperAdmin', 'StoreAdmin'), ctrl.completeTransfer);
+router.post('/:id/reject', authorize('SuperAdmin', 'StoreAdmin'), ctrl.rejectTransfer);
+module.exports = router;
