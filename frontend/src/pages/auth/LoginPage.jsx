@@ -88,15 +88,7 @@ export default function LoginPage() {
             Don't have a store? <Link to="/register" className="text-primary-600 font-semibold hover:underline">Register here</Link>
           </p>
 
-          {/* Demo credentials */}
-          <div className="mt-8 p-4 bg-emerald-50 rounded-xl border border-emerald-100">
-            <p className="text-xs font-semibold text-emerald-700 mb-2">Demo Login Credentials:</p>
-            <div className="space-y-1 text-xs text-emerald-600">
-              <p>Admin: <span className="font-mono">admin@alshifa.com</span> / admin123456</p>
-              <p>Pharmacist: <span className="font-mono">pharmacist@alshifa.com</span> / admin123456</p>
-              <p>Cashier: <span className="font-mono">cashier@alshifa.com</span> / admin123456</p>
-            </div>
-          </div>
+         
         </div>
       </div>
     </div>
