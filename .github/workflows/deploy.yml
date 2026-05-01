@@ -1,0 +1,99 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  CI/CD: auto-deploy MedStore Pro to the VPS on every push to main.
+#
+#  How it works:
+#    - GitHub Actions runner SSHes into the VPS (using a deploy SSH key
+#      stored in repo secrets).
+#    - On the VPS it: git pulls latest code, rebuilds the docker images,
+#      runs the new stack, and prunes dangling images.
+#    - A health check confirms the API is responding before the workflow
+#      reports success.
+#
+#  Required GitHub repo secrets (Settings → Secrets and variables → Actions):
+#    VPS_HOST    : 31.97.119.223
+#    VPS_USER    : root            (or the deploy user, e.g. medstore)
+#    VPS_SSH_KEY : <paste the PRIVATE key — see deploy/CICD-SETUP.md>
+#    VPS_PORT    : 22              (optional, defaults to 22)
+#
+#  Manual trigger: Actions tab → "Deploy to VPS" → "Run workflow".
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+    # Skip deploys when only docs changed
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+  workflow_dispatch:        # manual trigger button in Actions tab
+
+# Only one deploy at a time — if a second push comes in while the first
+# is running, the queued one waits and the third cancels the second.
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build & deploy on VPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Sanity check secrets
+        run: |
+          if [ -z "${{ secrets.VPS_HOST }}" ] || [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
+            echo "::error::Missing required secrets. See deploy/CICD-SETUP.md."
+            exit 1
+          fi
+
+      - name: SSH and deploy
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host:     ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key:      ${{ secrets.VPS_SSH_KEY }}
+          port:     ${{ secrets.VPS_PORT || '22' }}
+          # Fail fast on any non-zero exit; print each command.
+          script_stop: true
+          command_timeout: 12m
+          script: |
+            set -euo pipefail
+
+            APP_DIR="/opt/apps/medstore"
+            echo "▶ Deploying $(date '+%F %T')"
+            cd "$APP_DIR"
+
+            echo "▶ Pulling latest code"
+            git fetch --all --prune
+            git reset --hard origin/main
+            echo "  HEAD: $(git rev-parse --short HEAD) — $(git log -1 --pretty=%s)"
+
+            echo "▶ Rebuilding & starting containers"
+            docker compose up -d --build --remove-orphans
+
+            echo "▶ Pruning dangling images"
+            docker image prune -f
+
+            echo "▶ Container status"
+            docker compose ps
+
+            # Wait for API health (up to 60s) before declaring success.
+            echo "▶ Waiting for API to be healthy"
+            for i in $(seq 1 30); do
+              if docker compose exec -T api wget -qO- http://127.0.0.1:5000/api/health > /dev/null 2>&1; then
+                echo "  ✓ API healthy after ${i}x2s"
+                break
+              fi
+              if [ "$i" = "30" ]; then
+                echo "::error::API failed health check"
+                docker compose logs api --tail 50
+                exit 1
+              fi
+              sleep 2
+            done
+
+            echo "✅ Deploy successful"
