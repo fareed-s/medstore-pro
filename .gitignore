@@ -2,8 +2,9 @@ node_modules/
 dist/
 .env
 *.log
-uploads/*
-!uploads/.gitkeep
+# Match uploads at any depth (top-level OR nested under backend/, etc).
+**/uploads/**
+!**/uploads/.gitkeep
 .DS_Store
 coverage/
 
