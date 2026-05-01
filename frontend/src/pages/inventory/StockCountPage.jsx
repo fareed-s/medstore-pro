@@ -4,6 +4,7 @@ import API from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatDateTime } from '../../utils/helpers';
 import { toast } from 'react-toastify';
+import { confirm } from '../../utils/swal';
 import { HiOutlinePlus, HiOutlineCheck, HiOutlineClipboardCheck, HiOutlineEye } from 'react-icons/hi';
 
 export default function StockCountPage() {
@@ -68,7 +69,10 @@ export default function StockCountPage() {
   };
 
   const approveCount = async (id) => {
-    if (!window.confirm('Approve this count? Stock will be adjusted for all variances.')) return;
+    if (!(await confirm(
+      'Stock will be adjusted for all variances in this count.',
+      { title: 'Approve stock count?', confirmText: 'Approve' }
+    ))) return;
     try {
       await API.post(`/inventory-v2/counts/${id}/approve`);
       toast.success('Stock count approved — adjustments applied');

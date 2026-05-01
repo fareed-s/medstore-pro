@@ -1,12 +1,49 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import API from '../../utils/api';
 import { toast } from 'react-toastify';
-import { CATEGORIES, SCHEDULES } from '../../utils/helpers';
+import { SCHEDULES, apiError } from '../../utils/helpers';
+
+// Map a Category.name (created by seed/admin) → the legacy Medicine.category enum.
+// Used so saving a medicine keeps both `categoryId` and the enum field consistent.
+const CATEGORY_NAME_TO_ENUM = {
+  'Tablets': 'Tablet',
+  'Capsules': 'Capsule',
+  'Syrups & Suspensions': 'Syrup',
+  'Injections': 'Injection',
+  'Creams & Ointments': 'Cream/Ointment',
+  'Eye/Ear Drops': 'Drops',
+  'Inhalers': 'Inhaler',
+  'Sprays': 'Spray',
+  'Suppositories': 'Suppository',
+  'Sachets & Powders': 'Sachet',
+  'Surgical Items': 'Surgical',
+  'Solutions': 'Solution',
+  'Medical Devices': 'Device',
+  'Patches': 'Patch',
+  'Cosmetics & Skin Care': 'Cosmetic',
+  'OTC Medicines': 'OTC',
+  'Baby Care': 'Baby Care',
+  'Nutrition & Supplements': 'Nutrition',
+  'Gels & Lotions': 'Gel',
+  'Ayurvedic & Herbal': 'OTC',
+};
 
 const STORAGE = ['Room Temperature','Refrigerate (2-8°C)','Freeze','Protect from Light','Cool & Dry Place'];
 const DOSAGE_FORMS = ['Oral','Topical','Injectable','Ophthalmic','Otic','Nasal','Rectal','Inhalation','Sublingual','Transdermal'];
 const UNITS = ['tablet','capsule','ml','mg','g','piece','strip','bottle','tube','vial','ampoule','sachet','pack'];
+
+// Defined at module scope — declaring it inside MedicineFormPage would create a
+// new component type on every render, causing React to unmount/remount the
+// whole section subtree (and steal focus) on every keystroke.
+function Section({ title, children }) {
+  return (
+    <div className="card mb-4">
+      <h3 className="font-heading font-semibold text-gray-900 mb-4 pb-2 border-b border-gray-100">{title}</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{children}</div>
+    </div>
+  );
+}
 
 export default function MedicineFormPage() {
   const { id } = useParams();
@@ -15,10 +52,28 @@ export default function MedicineFormPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [categories, setCategories] = useState([]);
+  const [scanning, setScanning] = useState(false);
+  const barcodeRef = useRef(null);
+
+  // USB barcode scanners act as keyboards: focus the input, scanner types the
+  // code and ends with Enter. We swallow that Enter here so the form does not
+  // accidentally submit mid-scan.
+  const startScan = () => {
+    setScanning(true);
+    barcodeRef.current?.focus();
+    barcodeRef.current?.select();
+  };
+  const handleBarcodeKey = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      setScanning(false);
+      if (barcodeRef.current?.value) toast.success(`Barcode captured: ${barcodeRef.current.value}`);
+    }
+  };
 
   const [form, setForm] = useState({
     medicineName: '', genericName: '', manufacturer: '', barcode: '', sku: '',
-    category: 'Tablet', subCategory: '', therapeuticClass: '',
+    category: 'Tablet', categoryId: '', subCategory: '', therapeuticClass: '',
     schedule: 'OTC', formulation: '', packSize: '10', unitsPerPack: 10,
     unitOfMeasure: 'tablet', strength: '', dosageForm: 'Oral',
     costPrice: 0, mrp: 0, salePrice: 0, wholesalePrice: 0, taxRate: 0, hsnCode: '',
@@ -36,7 +91,9 @@ export default function MedicineFormPage() {
         setForm({
           medicineName: m.medicineName || '', genericName: m.genericName || '',
           manufacturer: m.manufacturer || '', barcode: m.barcode || '', sku: m.sku || '',
-          category: m.category || 'Tablet', subCategory: m.subCategory || '',
+          category: m.category || 'Tablet',
+          categoryId: m.categoryId?._id || m.categoryId || '',
+          subCategory: m.subCategory || '',
           therapeuticClass: m.therapeuticClass || '', schedule: m.schedule || 'OTC',
           formulation: m.formulation || '', packSize: m.packSize || '10',
           unitsPerPack: m.unitsPerPack || 10, unitOfMeasure: m.unitOfMeasure || 'tablet',
@@ -61,31 +118,33 @@ export default function MedicineFormPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!form.categoryId) {
+      toast.error('Please pick a category');
+      return;
+    }
     setSaving(true);
     try {
+      const payload = { ...form };
+      // Make sure the legacy `category` enum stays in sync with the picked category.
+      const cat = categories.find((c) => c._id === form.categoryId);
+      if (cat) payload.category = CATEGORY_NAME_TO_ENUM[cat.name] || form.category;
+
       if (isEdit) {
-        await API.put(`/medicines/${id}`, form);
+        await API.put(`/medicines/${id}`, payload);
         toast.success('Medicine updated');
       } else {
-        await API.post('/medicines', form);
+        await API.post('/medicines', payload);
         toast.success('Medicine added');
       }
       navigate('/medicines');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to save');
+      toast.error(apiError(err, 'Failed to save'));
     } finally {
       setSaving(false);
     }
   };
 
   if (loading) return <div className="flex justify-center py-20"><div className="w-10 h-10 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" /></div>;
-
-  const Section = ({ title, children }) => (
-    <div className="card mb-4">
-      <h3 className="font-heading font-semibold text-gray-900 mb-4 pb-2 border-b border-gray-100">{title}</h3>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{children}</div>
-    </div>
-  );
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -102,13 +161,41 @@ export default function MedicineFormPage() {
           <div><label className="label">Medicine Name *</label><input className="input-field" value={form.medicineName} onChange={update('medicineName')} required /></div>
           <div><label className="label">Generic Name</label><input className="input-field" value={form.genericName} onChange={update('genericName')} /></div>
           <div><label className="label">Manufacturer</label><input className="input-field" value={form.manufacturer} onChange={update('manufacturer')} /></div>
-          <div><label className="label">Barcode</label><input className="input-field" placeholder="Auto-generated if empty" value={form.barcode} onChange={update('barcode')} /></div>
+          <div>
+            <label className="label">Barcode</label>
+            <div className="flex gap-2">
+              <input
+                ref={barcodeRef}
+                className={`input-field flex-1 ${scanning ? 'ring-2 ring-primary-400 border-primary-400' : ''}`}
+                placeholder={scanning ? 'Ready — point scanner at barcode…' : 'Type or scan barcode'}
+                value={form.barcode}
+                onChange={update('barcode')}
+                onKeyDown={handleBarcodeKey}
+                onBlur={() => setScanning(false)}
+              />
+              <button
+                type="button"
+                onClick={startScan}
+                title="Focus field and capture from a USB barcode scanner"
+                className="px-3 rounded-lg bg-primary-50 text-primary-700 border border-primary-200 hover:bg-primary-100 text-sm font-medium whitespace-nowrap"
+              >
+                📷 Scan
+              </button>
+            </div>
+            {scanning && <p className="text-[11px] text-primary-600 mt-1">Scanner ready — scan barcode now…</p>}
+          </div>
           <div><label className="label">SKU</label><input className="input-field" value={form.sku} onChange={update('sku')} /></div>
           <div><label className="label">Strength</label><input className="input-field" placeholder="e.g. 500mg" value={form.strength} onChange={update('strength')} /></div>
         </Section>
 
         <Section title="Classification">
-          <div><label className="label">Category</label><select className="input-field" value={form.category} onChange={update('category')}>{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></div>
+          <div>
+            <label className="label"><span className="text-red-500 mr-0.5">*</span>Category</label>
+            <select className="input-field" value={form.categoryId} onChange={update('categoryId')} required>
+              <option value="">— Select category —</option>
+              {categories.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
+            </select>
+          </div>
           <div><label className="label">Sub Category</label><input className="input-field" placeholder="e.g. Painkiller" value={form.subCategory} onChange={update('subCategory')} /></div>
           <div><label className="label">Therapeutic Class</label><input className="input-field" placeholder="e.g. NSAID" value={form.therapeuticClass} onChange={update('therapeuticClass')} /></div>
           <div><label className="label">Drug Schedule</label><select className="input-field" value={form.schedule} onChange={update('schedule')}>{SCHEDULES.map(s => <option key={s}>{s}</option>)}</select></div>

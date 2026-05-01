@@ -15,7 +15,7 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
 
-// CORS — production supports Vercel frontend
+// CORS — comma-separated list of allowed origins (defaults to local Vite dev server)
 const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',').map(s => s.trim());
 app.use(cors({
   origin: function (origin, callback) {
@@ -27,9 +27,10 @@ app.use(cors({
   credentials: true,
 }));
 
-// Body parsing
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+// Body parsing — 25mb covers most bulk uploads; the master-catalog upload
+// chunks itself client-side so even bigger files come in as small requests.
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 app.use(cookieParser());
 
 // Logging
@@ -96,6 +97,25 @@ cron.schedule('0 8 * * *', async () => {
     console.log(`[CRON] Found ${expiringBatches.length} batches expiring within 30 days`);
   } catch (error) {
     console.error('[CRON] Expiry check failed:', error);
+  }
+});
+
+// Auto-suspend stores whose plan has expired. Runs daily at 1 AM. The auth
+// middleware also lazily auto-suspends on the next request, so this job is
+// belt-and-braces — it just ensures the dashboard list is accurate even if
+// no one from the store logs in.
+cron.schedule('0 1 * * *', async () => {
+  try {
+    const Store = require('./models/Store');
+    const result = await Store.updateMany(
+      { isActive: true, planEndDate: { $lt: new Date() } },
+      { $set: { isActive: false, suspendedReason: 'Plan expired', suspendedAt: new Date() } }
+    );
+    if (result.modifiedCount > 0) {
+      console.log(`[CRON] Auto-suspended ${result.modifiedCount} expired store(s)`);
+    }
+  } catch (error) {
+    console.error('[CRON] Plan-expiry check failed:', error);
   }
 });
 

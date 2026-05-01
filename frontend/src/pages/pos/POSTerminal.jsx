@@ -4,6 +4,7 @@ import API from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency } from '../../utils/helpers';
 import { toast } from 'react-toastify';
+import { confirmDanger } from '../../utils/swal';
 import { HiOutlineSearch, HiOutlineTrash, HiOutlinePlus, HiOutlineMinus, HiOutlinePause, HiOutlinePlay, HiOutlineX, HiOutlinePrinter, HiOutlineExclamation, HiOutlineSwitchHorizontal } from 'react-icons/hi';
 
 const PAY_METHODS = [{key:'cash',label:'Cash',icon:'💵'},{key:'card',label:'Card',icon:'💳'},{key:'upi',label:'UPI',icon:'📱'},{key:'credit',label:'Credit',icon:'📝'}];
@@ -30,6 +31,9 @@ export default function POSTerminal() {
   const [newCustName, setNewCustName] = useState('');
   const [newCustPhone, setNewCustPhone] = useState('');
   const [overallDiscPct, setOverallDiscPct] = useState(0);
+  const [overallDiscAmt, setOverallDiscAmt] = useState(0);
+  const [discMode, setDiscMode] = useState('pct'); // 'pct' or 'amt'
+  const [billName, setBillName] = useState('');
   const [payments, setPayments] = useState([{method:'cash',amount:'',reference:''}]);
   const [heldBills, setHeldBills] = useState([]);
   const [showHeld, setShowHeld] = useState(false);
@@ -61,7 +65,9 @@ export default function POSTerminal() {
   const fetchTiles = async()=>{
     setTilesLoading(true);
     try{
-      const p=new URLSearchParams({page:tilesPage,limit:40});
+      // POS only ever shows medicines that are actually sellable — inStock=true
+      // hides anything with currentStock <= 0 at the database level.
+      const p=new URLSearchParams({page:tilesPage,limit:40,inStock:'true'});
       if(selectedCat!=='All')p.set('category',selectedCat);
       const{data}=await API.get(`/medicines?${p}`);setTiles(data.data);
     }catch{}finally{setTilesLoading(false);}
@@ -70,7 +76,7 @@ export default function POSTerminal() {
   const searchMeds = useCallback(async q=>{
     if(!q||q.length<1){setSearchResults([]);return;}
     setSearching(true);
-    try{const{data}=await API.get(`/medicines/search?q=${encodeURIComponent(q)}&limit=10`);setSearchResults(data.data);}catch{}finally{setSearching(false);}
+    try{const{data}=await API.get(`/medicines/search?q=${encodeURIComponent(q)}&limit=10&inStock=true`);setSearchResults(data.data);}catch{}finally{setSearching(false);}
   },[]);
   useEffect(()=>{const t=setTimeout(()=>searchMeds(searchQuery),200);return()=>clearTimeout(t);},[searchQuery,searchMeds]);
 
@@ -122,13 +128,20 @@ export default function POSTerminal() {
   const updateQty=(id,q)=>{if(q<1)return removeItem(id);setCart(cart.map(i=>{if(i.medicineId===id){const lt=(i.unitPrice*q)-i.discount+((i.unitPrice*q-i.discount)*i.taxRate/100);return{...i,quantity:q,lineTotal:lt};}return i;}));};
   const updateDisc=(id,d)=>{const dv=parseFloat(d)||0;setCart(cart.map(i=>{if(i.medicineId===id){const lt=(i.unitPrice*i.quantity)-dv+((i.unitPrice*i.quantity-dv)*i.taxRate/100);return{...i,discount:dv,lineTotal:lt};}return i;}));};
   const removeItem=id=>setCart(cart.filter(i=>i.medicineId!==id));
-  const clearCart=()=>{if(cart.length&&window.confirm('Clear?')){setCart([]);setOverallDiscPct(0);setPayments([{method:'cash',amount:'',reference:''}]);setInteractions(null);}};
+  const clearCart=async()=>{
+    if(!cart.length) return;
+    if(!(await confirmDanger('All items in the current cart will be removed.', { title: 'Clear cart?', confirmText: 'Clear' }))) return;
+    setCart([]);setOverallDiscPct(0);setOverallDiscAmt(0);setDiscMode('pct');
+    setPayments([{method:'cash',amount:'',reference:''}]);setInteractions(null);
+  };
 
   const sub=cart.reduce((s,i)=>s+(i.unitPrice*i.quantity),0);
   const itemDisc=cart.reduce((s,i)=>s+i.discount,0);
   const tax=cart.reduce((s,i)=>s+((i.unitPrice*i.quantity-i.discount)*i.taxRate/100),0);
   const after=sub-itemDisc+tax;
-  const billDisc=overallDiscPct>0?(after*overallDiscPct/100):0;
+  const billDisc=discMode==='pct'
+    ?(overallDiscPct>0?(after*overallDiscPct/100):0)
+    :Math.min(overallDiscAmt||0,after);
   const net=Math.round(after-billDisc);
   const totalPay=payments.reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
   const change=totalPay-net;
@@ -190,14 +203,16 @@ export default function POSTerminal() {
     // ── PROCESS SALE ──
     setProcessing(true);
     try{
+      const printName=billName.trim()||customerName;
       const{data}=await API.post('/sales',{
         items:cart.map(i=>({medicineId:i.medicineId,medicineName:i.medicineName,quantity:i.quantity,unitPrice:i.unitPrice,discount:i.discount||0,taxRate:i.taxRate||0})),
-        payments:pl,customerName,customerPhone,customerId,
-        overallDiscount:billDisc,overallDiscountPercent:overallDiscPct
+        payments:pl,customerName:printName,customerPhone,customerId,
+        overallDiscount:discMode==='amt'?(overallDiscAmt||0):0,
+        overallDiscountPercent:discMode==='pct'?(overallDiscPct||0):0
       });
       setLastSale(data.data);setShowReceipt(true);
       toast.success(`✅ Sale completed: ${data.data.invoiceNo} — ${formatCurrency(data.data.netTotal)}`);
-      setCart([]);setOverallDiscPct(0);setPayments([{method:'cash',amount:'',reference:''}]);
+      setCart([]);setOverallDiscPct(0);setOverallDiscAmt(0);setDiscMode('pct');setBillName('');setPayments([{method:'cash',amount:'',reference:''}]);
       setCustomerName('Walk-in Customer');setCustomerPhone('');setCustomerId(null);setCustSearch('');setInteractions(null);
     }catch(err){
       const msg=err.response?.data?.message||'Sale failed — please try again';
@@ -213,38 +228,154 @@ export default function POSTerminal() {
   };
   return (
     <div className="fixed inset-0 bg-gray-50 z-50 flex flex-col">
-      <div className="h-10 bg-gradient-to-r from-primary-800 to-primary-900 flex items-center px-3 gap-3 flex-shrink-0">
-        <button onClick={()=>navigate('/dashboard')} className="text-white/70 hover:text-white text-xs flex items-center gap-1"><HiOutlineX className="w-3.5 h-3.5"/>Exit</button>
-        <div className="flex-1 text-center text-white font-heading font-bold text-sm">POS Terminal</div>
-        {interactions?.totalAlerts>0&&<button onClick={()=>setShowInteractions(true)} className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-lg flex items-center gap-1 animate-pulse"><HiOutlineExclamation className="w-3 h-3"/>{interactions.totalAlerts} Alerts</button>}
-        <span className="text-white/40 text-[9px] hidden md:block">F2:Search F5:Hold F10:Complete</span>
-        <span className="text-white/60 text-xs">{user?.name}</span>
+      <div className="h-12 bg-gradient-to-r from-primary-800 to-primary-900 flex items-center px-4 gap-3 flex-shrink-0">
+        <button onClick={()=>navigate('/dashboard')} className="text-white/80 hover:text-white text-sm flex items-center gap-1.5">
+          <HiOutlineX className="w-4 h-4"/>Exit
+        </button>
+        <div className="flex-1 text-center text-white font-heading font-bold text-base">POS Terminal</div>
+        {interactions?.totalAlerts>0&&(
+          <button onClick={()=>setShowInteractions(true)} className="bg-red-500 text-white text-xs px-2.5 py-1 rounded-lg flex items-center gap-1 animate-pulse">
+            <HiOutlineExclamation className="w-3.5 h-3.5"/>{interactions.totalAlerts} Alerts
+          </button>
+        )}
+        <span className="text-white/50 text-xs hidden md:block">F2 Search · F5 Hold · F10 Complete</span>
+        <span className="text-white/80 text-sm font-medium">{user?.name}</span>
       </div>
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-[60] flex flex-col border-r border-gray-200 bg-white">
-          <div className="p-2 border-b border-gray-100">
+          <div className="p-3 border-b border-gray-100">
             <div className="relative">
-              <HiOutlineSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/>
-              <input ref={searchRef} className="w-full pl-10 pr-4 py-2 text-sm rounded-xl border-2 border-primary-200 focus:border-primary-500 outline-none" placeholder="Scan barcode or search..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} onKeyDown={handleSearchKey}/>
+              <HiOutlineSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"/>
+              <input ref={searchRef}
+                className="w-full pl-11 pr-4 py-3 text-base rounded-xl border-2 border-primary-200 focus:border-primary-500 outline-none"
+                placeholder="Scan barcode or search medicines..."
+                value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} onKeyDown={handleSearchKey}/>
             </div>
-            {searchResults.length>0&&<div className="absolute z-20 left-2 right-[40%] mt-1 bg-white rounded-xl shadow-2xl border max-h-60 overflow-y-auto">{searchResults.map(m=><button key={m._id} onClick={()=>addToCart(m)} className="w-full px-3 py-2 flex items-center gap-3 hover:bg-primary-50 text-left border-b border-gray-50 last:border-0"><div className="flex-1 min-w-0"><p className="font-medium text-sm truncate">{m.medicineName}</p><p className="text-[10px] text-gray-400">{m.genericName}</p></div><div className="text-right"><p className="font-bold text-primary-600 text-sm">{formatCurrency(m.salePrice)}</p><p className={`text-[9px] ${m.currentStock<=0?'text-red-500 font-bold':'text-gray-400'}`}>Stock:{m.currentStock}</p></div></button>)}</div>}
+            {searchResults.length>0&&(
+              <div className="absolute z-20 left-3 right-[40%] mt-1 bg-white rounded-xl shadow-2xl border max-h-72 overflow-y-auto">
+                {searchResults.map(m=>(
+                  <button key={m._id} onClick={()=>addToCart(m)}
+                    className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-primary-50 text-left border-b border-gray-50 last:border-0">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{m.medicineName}</p>
+                      <p className="text-xs text-gray-400">{m.genericName}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-primary-600 text-sm">{formatCurrency(m.salePrice)}</p>
+                      <p className={`text-xs ${m.currentStock<=0?'text-red-500 font-bold':'text-gray-400'}`}>Stock: {m.currentStock}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-          <div className="flex gap-1 px-2 py-1 border-b border-gray-100 overflow-x-auto flex-shrink-0">{CAT_TABS.map(c=><button key={c} onClick={()=>{setSelectedCat(c);setTilesPage(1);}} className={`px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap ${selectedCat===c?'bg-primary-600 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{c}</button>)}</div>
-          <div className="flex-1 overflow-y-auto p-1.5">
-            {tilesLoading?<div className="flex justify-center py-8"><div className="w-6 h-6 border-3 border-primary-200 border-t-primary-600 rounded-full animate-spin"/></div>:
-            tiles.length===0?<div className="text-center py-8 text-gray-400 text-sm">No medicines</div>:
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-1">{tiles.map(m=>{const oos=m.currentStock<=0;const ic=cart.find(i=>i.medicineId===m._id);return<button key={m._id} onClick={()=>addToCart(m)} className={`relative p-1.5 rounded-lg border text-left transition-all active:scale-95 ${ic?'border-primary-400 bg-primary-50 ring-1 ring-primary-300':oos?'border-red-200 bg-red-50/30 opacity-50':'border-gray-200 bg-white hover:border-primary-300 hover:shadow-sm'}`}>{ic&&<div className="absolute -top-1 -right-1 w-4 h-4 bg-primary-600 text-white rounded-full text-[9px] flex items-center justify-center font-bold">{ic.quantity}</div>}<p className="text-[10px] font-medium text-gray-900 leading-tight truncate">{m.medicineName}</p><p className="text-[8px] text-gray-400 truncate">{m.genericName}</p><div className="flex items-center justify-between mt-0.5"><span className="text-[10px] font-bold text-primary-700">{formatCurrency(m.salePrice)}</span><span className={`text-[8px] ${oos?'text-red-500':'text-gray-400'}`}>{oos?'OOS':m.currentStock}</span></div></button>})}</div>}
-            <div className="flex justify-center gap-2 py-1"><button onClick={()=>setTilesPage(p=>Math.max(1,p-1))} disabled={tilesPage<=1} className="px-2 py-0.5 text-[10px] bg-gray-100 rounded disabled:opacity-30">←Prev</button><span className="text-[10px] text-gray-400 py-0.5">Pg {tilesPage}</span><button onClick={()=>setTilesPage(p=>p+1)} disabled={tiles.length<40} className="px-2 py-0.5 text-[10px] bg-gray-100 rounded disabled:opacity-30">Next→</button></div>
+          <div className="flex gap-1.5 px-3 py-2 border-b border-gray-100 overflow-x-auto flex-shrink-0">
+            {CAT_TABS.map(c=>(
+              <button key={c} onClick={()=>{setSelectedCat(c);setTilesPage(1);}}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition
+                  ${selectedCat===c?'bg-primary-600 text-white shadow-sm':'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                {c}
+              </button>
+            ))}
           </div>
-          {cart.length>0&&<div className="border-t border-gray-200 max-h-[30%] overflow-y-auto flex-shrink-0">
-            <div className="px-2 py-0.5 bg-gray-50 flex items-center justify-between"><span className="text-[10px] font-semibold text-gray-500">{cart.length} items</span><button onClick={clearCart} className="text-[9px] text-red-500">Clear</button></div>
-            <table className="w-full text-[10px]"><thead className="bg-gray-50 sticky top-0"><tr className="text-left text-[9px] text-gray-500 uppercase"><th className="px-1.5 py-0.5">Item</th><th className="px-1 py-0.5 w-16 text-center">Qty</th><th className="px-1 py-0.5 w-14 text-right">Price</th><th className="px-1 py-0.5 w-12 text-right">Disc</th><th className="px-1 py-0.5 w-16 text-right">Total</th><th className="w-5"></th></tr></thead>
-            <tbody className="divide-y divide-gray-50">{cart.map(i=><tr key={i.medicineId}><td className="px-1.5 py-0.5"><span className="font-medium">{i.medicineName}</span></td><td className="px-1 py-0.5"><div className="flex items-center justify-center gap-0.5"><button onClick={()=>updateQty(i.medicineId,i.quantity-1)} className="w-4 h-4 rounded bg-gray-100 flex items-center justify-center"><HiOutlineMinus className="w-2 h-2"/></button><input type="number" min="1" value={i.quantity} onChange={e=>updateQty(i.medicineId,parseInt(e.target.value)||1)} className="w-7 text-center border rounded py-0 text-[10px] font-bold"/><button onClick={()=>updateQty(i.medicineId,i.quantity+1)} className="w-4 h-4 rounded bg-gray-100 flex items-center justify-center"><HiOutlinePlus className="w-2 h-2"/></button></div></td><td className="px-1 py-0.5 text-right">{formatCurrency(i.unitPrice)}</td><td className="px-1 py-0.5 text-right"><input type="number" min="0" value={i.discount||''} placeholder="0" onChange={e=>updateDisc(i.medicineId,e.target.value)} className="w-10 text-right border rounded px-0.5 py-0 text-[9px]"/></td><td className="px-1 py-0.5 text-right font-bold text-primary-700">{formatCurrency(i.lineTotal)}</td><td><button onClick={()=>removeItem(i.medicineId)} className="p-0.5 hover:bg-red-50 rounded"><HiOutlineTrash className="w-2.5 h-2.5 text-red-400"/></button></td></tr>)}</tbody></table>
-          </div>}
+          <div className="flex-1 overflow-y-auto p-3">
+            {tilesLoading?<div className="flex justify-center py-10"><div className="w-7 h-7 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin"/></div>:
+            tiles.length===0?<div className="text-center py-10 text-gray-400 text-sm">No medicines</div>:
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-2.5">
+              {tiles.map(m=>{
+                const oos=m.currentStock<=0;
+                const ic=cart.find(i=>i.medicineId===m._id);
+                return (
+                  <button key={m._id} onClick={()=>addToCart(m)}
+                    className={`relative p-3 rounded-xl border text-left transition-all active:scale-95
+                      ${ic?'border-primary-500 bg-primary-50 ring-2 ring-primary-300 shadow-sm'
+                        :oos?'border-red-200 bg-red-50/40 opacity-60'
+                        :'border-gray-200 bg-white hover:border-primary-400 hover:shadow-md'}`}>
+                    {ic&&(
+                      <div className="absolute -top-1.5 -right-1.5 w-6 h-6 bg-primary-600 text-white rounded-full text-xs flex items-center justify-center font-bold shadow">
+                        {ic.quantity}
+                      </div>
+                    )}
+                    <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2 min-h-[2.5em]">{m.medicineName}</p>
+                    <p className="text-xs text-gray-500 truncate mt-0.5">{m.genericName||'—'}</p>
+                    <div className="flex items-end justify-between mt-2">
+                      <span className="text-base font-bold text-primary-700">{formatCurrency(m.salePrice)}</span>
+                      <span className={`text-xs font-medium ${oos?'text-red-600':m.currentStock<=(m.lowStockThreshold||10)?'text-amber-600':'text-gray-500'}`}>
+                        {oos?'Out':`${m.currentStock} left`}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>}
+            <div className="flex justify-center items-center gap-3 py-3">
+              <button onClick={()=>setTilesPage(p=>Math.max(1,p-1))} disabled={tilesPage<=1} className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded-lg disabled:opacity-30">← Prev</button>
+              <span className="text-xs text-gray-500">Page {tilesPage}</span>
+              <button onClick={()=>setTilesPage(p=>p+1)} disabled={tiles.length<40} className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded-lg disabled:opacity-30">Next →</button>
+            </div>
+          </div>
+          {cart.length>0&&(
+            <div className="border-t-2 border-primary-100 max-h-[38%] overflow-y-auto flex-shrink-0 bg-white">
+              <div className="px-3 py-2 bg-primary-50/60 flex items-center justify-between sticky top-0 z-10 border-b border-primary-100">
+                <span className="text-sm font-semibold text-gray-700">🛒 {cart.length} items in cart</span>
+                <button onClick={clearCart} className="text-xs font-medium text-red-500 hover:text-red-700">Clear all</button>
+              </div>
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 sticky top-[37px] z-10">
+                  <tr className="text-left text-[11px] text-gray-500 uppercase tracking-wider">
+                    <th className="px-3 py-2">Item</th>
+                    <th className="px-2 py-2 w-28 text-center">Qty</th>
+                    <th className="px-2 py-2 w-24 text-right">Price</th>
+                    <th className="px-2 py-2 w-20 text-right">Disc</th>
+                    <th className="px-2 py-2 w-24 text-right">Total</th>
+                    <th className="w-8"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {cart.map(i=>(
+                    <tr key={i.medicineId} className="hover:bg-gray-50/60">
+                      <td className="px-3 py-2">
+                        <p className="font-medium text-gray-900">{i.medicineName}</p>
+                        {i.genericName&&<p className="text-[11px] text-gray-400">{i.genericName}</p>}
+                      </td>
+                      <td className="px-2 py-2">
+                        <div className="flex items-center justify-center gap-1">
+                          <button onClick={()=>updateQty(i.medicineId,i.quantity-1)} className="w-7 h-7 rounded-md bg-gray-100 hover:bg-gray-200 flex items-center justify-center">
+                            <HiOutlineMinus className="w-3.5 h-3.5"/>
+                          </button>
+                          <input type="number" min="1" value={i.quantity}
+                            onChange={e=>updateQty(i.medicineId,parseInt(e.target.value)||1)}
+                            className="w-12 text-center border rounded-md py-1 text-sm font-bold"/>
+                          <button onClick={()=>updateQty(i.medicineId,i.quantity+1)} className="w-7 h-7 rounded-md bg-gray-100 hover:bg-gray-200 flex items-center justify-center">
+                            <HiOutlinePlus className="w-3.5 h-3.5"/>
+                          </button>
+                        </div>
+                      </td>
+                      <td className="px-2 py-2 text-right text-gray-700">{formatCurrency(i.unitPrice)}</td>
+                      <td className="px-2 py-2 text-right">
+                        <input type="number" min="0" value={i.discount||''} placeholder="0"
+                          onChange={e=>updateDisc(i.medicineId,e.target.value)}
+                          className="w-16 text-right border rounded-md px-1.5 py-1 text-sm"/>
+                      </td>
+                      <td className="px-2 py-2 text-right font-bold text-primary-700 text-sm">{formatCurrency(i.lineTotal)}</td>
+                      <td className="text-center">
+                        <button onClick={()=>removeItem(i.medicineId)} className="p-1.5 hover:bg-red-50 rounded-md">
+                          <HiOutlineTrash className="w-4 h-4 text-red-500"/>
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
         <div className="flex-[40] flex flex-col bg-gray-50 overflow-y-auto">
-          <div className="p-2 bg-white border-b">
-            <div className="flex items-center justify-between mb-1"><label className="text-[9px] font-semibold text-gray-500 uppercase">Customer</label><button onClick={()=>setShowAddCust(!showAddCust)} className="text-[9px] text-primary-600 font-medium hover:underline">{showAddCust?'Cancel':'+ New'}</button></div>
+          <div className="p-3 bg-white border-b">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Customer</label>
+              <button onClick={()=>setShowAddCust(!showAddCust)} className="text-xs text-primary-600 font-medium hover:underline">{showAddCust?'Cancel':'+ New'}</button>
+            </div>
             {showAddCust?(
               <div className="space-y-1">
                 <input className="w-full px-2 py-1.5 rounded-lg border border-gray-200 text-sm" placeholder="Customer name *" value={newCustName} onChange={e=>setNewCustName(e.target.value)}/>
@@ -258,24 +389,89 @@ export default function POSTerminal() {
               </div>
             )}
             {customerId&&<div className="flex items-center justify-between mt-1"><p className="text-[10px] text-primary-600 font-medium">{customerName} • {customerPhone}</p><button onClick={()=>{setCustomerId(null);setCustomerName('Walk-in Customer');setCustomerPhone('');setCustSearch('');}} className="text-[9px] text-red-400 hover:underline">Clear</button></div>}
+            <div className="mt-2 pt-2 border-t border-dashed border-gray-200">
+              <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Bill Name (optional)</label>
+              <input
+                className="w-full mt-1 px-2 py-1.5 rounded-lg border border-gray-200 text-sm"
+                placeholder="Print this name on bill (e.g. company name)"
+                value={billName}
+                onChange={e=>setBillName(e.target.value)}/>
+              {billName.trim()&&<p className="text-[10px] text-primary-600 mt-0.5">Bill will print as: <b>{billName.trim()}</b></p>}
+            </div>
           </div>
-          <div className="p-2 bg-white border-b space-y-0.5 text-sm">
-            <div className="flex justify-between"><span className="text-gray-500 text-xs">Subtotal</span><span>{formatCurrency(sub)}</span></div>
-            {itemDisc>0&&<div className="flex justify-between"><span className="text-gray-500 text-xs">Discount</span><span className="text-red-500">-{formatCurrency(itemDisc)}</span></div>}
-            {tax>0&&<div className="flex justify-between"><span className="text-gray-500 text-xs">Tax</span><span>+{formatCurrency(tax)}</span></div>}
-            <div className="flex items-center gap-1 pt-1 border-t"><span className="text-xs text-gray-500 flex-1">Disc%</span><input type="number" min="0" max="100" className="w-12 text-right border rounded px-1 py-0.5 text-xs" value={overallDiscPct||''} placeholder="0" onChange={e=>setOverallDiscPct(parseFloat(e.target.value)||0)}/></div>
-            {billDisc>0&&<div className="flex justify-between text-red-500 text-xs"><span>Bill Disc</span><span>-{formatCurrency(billDisc)}</span></div>}
-            <div className="flex justify-between pt-1.5 border-t-2 border-primary-200"><span className="font-heading font-bold">TOTAL</span><span className="text-xl font-heading font-bold text-primary-700">{formatCurrency(net)}</span></div>
+          <div className="p-3 bg-white border-b space-y-1.5 text-sm">
+            <div className="flex justify-between"><span className="text-gray-500">Subtotal</span><span className="font-medium">{formatCurrency(sub)}</span></div>
+            {itemDisc>0&&<div className="flex justify-between"><span className="text-gray-500">Discount</span><span className="text-red-500">-{formatCurrency(itemDisc)}</span></div>}
+            {tax>0&&<div className="flex justify-between"><span className="text-gray-500">Tax</span><span>+{formatCurrency(tax)}</span></div>}
+            <div className="flex items-center gap-2 pt-2 border-t">
+              <span className="text-gray-500 flex-1">Bill Discount</span>
+              <div className="flex rounded-md border border-gray-200 overflow-hidden">
+                <button type="button"
+                  onClick={()=>{setDiscMode('pct');setOverallDiscAmt(0);}}
+                  className={`px-2 py-1 text-xs font-medium ${discMode==='pct'?'bg-primary-600 text-white':'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>%</button>
+                <button type="button"
+                  onClick={()=>{setDiscMode('amt');setOverallDiscPct(0);}}
+                  className={`px-2 py-1 text-xs font-medium ${discMode==='amt'?'bg-primary-600 text-white':'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>Rs</button>
+              </div>
+              {discMode==='pct'?(
+                <input type="number" min="0" max="100" className="w-20 text-right border rounded-md px-2 py-1 text-sm"
+                  value={overallDiscPct||''} placeholder="0"
+                  onChange={e=>setOverallDiscPct(parseFloat(e.target.value)||0)}/>
+              ):(
+                <input type="number" min="0" className="w-20 text-right border rounded-md px-2 py-1 text-sm"
+                  value={overallDiscAmt||''} placeholder="0"
+                  onChange={e=>setOverallDiscAmt(parseFloat(e.target.value)||0)}/>
+              )}
+            </div>
+            {billDisc>0&&<div className="flex justify-between text-red-500"><span>Bill Disc</span><span>-{formatCurrency(billDisc)}</span></div>}
+            <div className="flex justify-between items-center pt-2 border-t-2 border-primary-200">
+              <span className="font-heading font-bold text-base">TOTAL</span>
+              <span className="text-2xl font-heading font-bold text-primary-700">{formatCurrency(net)}</span>
+            </div>
           </div>
-          <div className="p-2 bg-white border-b">
-            <div className="flex items-center justify-between mb-1"><label className="text-[9px] font-semibold text-gray-500 uppercase">Payment</label><button onClick={addPayRow} className="text-[9px] text-primary-600 hover:underline">+Split</button></div>
-            {payments.map((p,i)=><div key={i} className="flex gap-1 mb-1 items-center"><select className="border rounded px-1 py-1 text-[10px] w-16" value={p.method} onChange={e=>updPay(i,'method',e.target.value)}>{PAY_METHODS.map(pm=><option key={pm.key} value={pm.key}>{pm.icon}{pm.label}</option>)}</select><input type="number" placeholder={String(net)} className="flex-1 border rounded px-2 py-1 text-sm font-bold text-right" value={p.amount} onChange={e=>updPay(i,'amount',e.target.value)}/>{(p.method==='card'||p.method==='upi')&&<input className="w-20 border rounded px-1 py-1 text-[9px]" placeholder="Ref#" value={p.reference} onChange={e=>updPay(i,'reference',e.target.value)}/>}{payments.length>1&&<button onClick={()=>rmPayRow(i)} className="p-0.5"><HiOutlineX className="w-3 h-3 text-red-400"/></button>}</div>)}
-            {payments[0]?.method==='cash'&&totalPay>0&&<p className={`text-right text-xs font-bold ${change>=0?'text-primary-600':'text-red-600'}`}>Change: {formatCurrency(Math.max(0,change))}</p>}
+          <div className="p-3 bg-white border-b">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Payment</label>
+              <button onClick={addPayRow} className="text-xs text-primary-600 font-medium hover:underline">+ Split</button>
+            </div>
+            {payments.map((p,i)=>(
+              <div key={i} className="flex gap-2 mb-2 items-center">
+                <select className="border rounded-md px-2 py-1.5 text-sm w-24" value={p.method} onChange={e=>updPay(i,'method',e.target.value)}>
+                  {PAY_METHODS.map(pm=><option key={pm.key} value={pm.key}>{pm.icon} {pm.label}</option>)}
+                </select>
+                <input type="number" placeholder={String(net)}
+                  className="flex-1 border rounded-md px-2.5 py-1.5 text-base font-bold text-right"
+                  value={p.amount} onChange={e=>updPay(i,'amount',e.target.value)}/>
+                {(p.method==='card'||p.method==='upi')&&(
+                  <input className="w-24 border rounded-md px-2 py-1.5 text-xs" placeholder="Ref#"
+                    value={p.reference} onChange={e=>updPay(i,'reference',e.target.value)}/>
+                )}
+                {payments.length>1&&(
+                  <button onClick={()=>rmPayRow(i)} className="p-1 hover:bg-red-50 rounded-md">
+                    <HiOutlineX className="w-4 h-4 text-red-400"/>
+                  </button>
+                )}
+              </div>
+            ))}
+            {payments[0]?.method==='cash'&&totalPay>0&&(
+              <p className={`text-right text-sm font-bold ${change>=0?'text-primary-600':'text-red-600'}`}>
+                Change: {formatCurrency(Math.max(0,change))}
+              </p>
+            )}
           </div>
-          <div className="p-2 space-y-1 mt-auto">
-            {heldBills.length>0&&<button onClick={()=>setShowHeld(true)} className="w-full py-1.5 rounded-xl border-2 border-amber-300 bg-amber-50 text-amber-700 font-medium text-xs flex items-center justify-center gap-1"><HiOutlinePlay className="w-3 h-3"/>Resume({heldBills.length})</button>}
-            <button onClick={holdBill} disabled={!cart.length} className="w-full py-1.5 rounded-xl border-2 border-gray-300 text-gray-600 text-xs flex items-center justify-center gap-1 hover:bg-gray-100 disabled:opacity-30"><HiOutlinePause className="w-3 h-3"/>Hold(F5)</button>
-            <button onClick={completeSale} disabled={!cart.length||processing} className="w-full py-3 rounded-xl bg-primary-600 hover:bg-primary-700 text-white font-heading font-bold text-base flex items-center justify-center gap-2 shadow-lg disabled:opacity-30 active:scale-[0.98]">{processing?'Processing...':'✓ Complete — '+formatCurrency(net)}</button>
+          <div className="p-3 space-y-2 mt-auto">
+            {heldBills.length>0&&(
+              <button onClick={()=>setShowHeld(true)} className="w-full py-2 rounded-xl border-2 border-amber-300 bg-amber-50 text-amber-700 font-medium text-sm flex items-center justify-center gap-2">
+                <HiOutlinePlay className="w-4 h-4"/>Resume ({heldBills.length})
+              </button>
+            )}
+            <button onClick={holdBill} disabled={!cart.length} className="w-full py-2 rounded-xl border-2 border-gray-300 text-gray-700 text-sm font-medium flex items-center justify-center gap-2 hover:bg-gray-100 disabled:opacity-30">
+              <HiOutlinePause className="w-4 h-4"/>Hold (F5)
+            </button>
+            <button onClick={completeSale} disabled={!cart.length||processing}
+              className="w-full py-3.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white font-heading font-bold text-base flex items-center justify-center gap-2 shadow-lg disabled:opacity-30 active:scale-[0.98]">
+              {processing?'Processing...':'✓ Complete — '+formatCurrency(net)}
+            </button>
           </div>
         </div>
       </div>

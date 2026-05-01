@@ -62,3 +62,7 @@ export const CATEGORIES = [
 ];
 
 export const SCHEDULES = ['OTC','Schedule-G','Schedule-H','Schedule-H1','Schedule-X'];
+
+// Extract a user-facing error message from an axios/fetch error.
+export const apiError = (err, fallback = 'Operation failed') =>
+  err?.response?.data?.message || err?.message || fallback;

@@ -6,6 +6,7 @@ router.use(protect);
 
 router.get('/', ctrl.getBatches);
 router.post('/', authorize('SuperAdmin', 'StoreAdmin', 'InventoryStaff'), ctrl.createBatch);
+router.post('/quick-stock-in', authorize('SuperAdmin', 'StoreAdmin', 'InventoryStaff'), ctrl.quickStockIn);
 router.put('/:id', authorize('SuperAdmin', 'StoreAdmin', 'InventoryStaff'), ctrl.updateBatch);
 router.get('/expiry-dashboard', ctrl.getExpiryDashboard);
 router.post('/adjust', authorize('SuperAdmin', 'StoreAdmin', 'InventoryStaff'), ctrl.adjustStock);

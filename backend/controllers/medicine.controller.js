@@ -1,13 +1,27 @@
 const Medicine = require('../models/Medicine');
 const Batch = require('../models/Batch');
+const Category = require('../models/Category');
 const ActivityLog = require('../models/ActivityLog');
 const { asyncHandler, AppError } = require('../utils/errorHandler');
 const { generateBarcode, generateSKU, paginate, paginationResult, sanitizeSearch } = require('../utils/helpers');
 
+// After an aggregation pipeline we lose the populate() helpers, so re-attach
+// the category name in one batched lookup.
+const populateCategoryName = async (medicines) => {
+  const ids = [...new Set(medicines.map((m) => m.categoryId).filter(Boolean).map(String))];
+  if (!ids.length) return medicines;
+  const cats = await Category.find({ _id: { $in: ids } }).select('name').lean();
+  const byId = new Map(cats.map((c) => [String(c._id), { _id: c._id, name: c.name }]));
+  return medicines.map((m) => ({
+    ...m,
+    categoryId: m.categoryId ? byId.get(String(m.categoryId)) || m.categoryId : m.categoryId,
+  }));
+};
+
 // @desc    Get all medicines (with search, filter, pagination)
 // @route   GET /api/medicines
 exports.getMedicines = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 25, search, category, schedule, stockStatus, sort = '-createdAt' } = req.query;
+  const { page = 1, limit = 25, search, category, categoryId, schedule, stockStatus, inStock, sort = '-createdAt' } = req.query;
   const storeId = req.user.role === 'SuperAdmin' ? req.query.storeId : req.user.storeId;
 
   if (!storeId && req.user.role !== 'SuperAdmin') {
@@ -29,7 +43,8 @@ exports.getMedicines = asyncHandler(async (req, res) => {
     ];
   }
 
-  if (category) filter.category = category;
+  if (categoryId) filter.categoryId = categoryId;
+  else if (category) filter.category = category;
   if (schedule) filter.schedule = schedule;
 
   // Stock status filter
@@ -37,21 +52,55 @@ exports.getMedicines = asyncHandler(async (req, res) => {
   if (stockStatus === 'low') filter.$expr = { $lte: ['$currentStock', '$lowStockThreshold'] };
   if (stockStatus === 'ok') filter.$expr = { $gt: ['$currentStock', '$lowStockThreshold'] };
 
+  // POS uses inStock=true to hide out-of-stock items entirely
+  if (inStock === 'true' || inStock === '1') filter.currentStock = { $gt: 0 };
+
   const { skip, limit: lim } = paginate(null, page, limit);
   const total = await Medicine.countDocuments(filter);
-  
-  let query = Medicine.find(filter)
-    .sort(sort)
-    .skip(skip)
-    .limit(lim)
-    .populate('categoryId', 'name');
 
-  // Hide cost prices from Cashier
-  if (req.hideCost) {
-    query = query.select('-costPrice -wholesalePrice -marginPercent');
+  let medicines;
+  if (search) {
+    // When the user is searching, rank prefix-matches above substring-matches
+    // and sort alphabetically inside each rank. So typing "nov" surfaces
+    // medicines that *start with* "Nov…" before ones that just contain it
+    // (e.g. "Pregnovit"). Same for typing "n" — "Novosef" beats "Aspirin".
+    const escaped = sanitizeSearch(search);
+    const pipeline = [
+      { $match: filter },
+      {
+        $addFields: {
+          _rank: {
+            $cond: [
+              { $regexMatch: { input: '$medicineName', regex: `^${escaped}`, options: 'i' } },
+              0,
+              1,
+            ],
+          },
+        },
+      },
+      { $sort: { _rank: 1, medicineName: 1 } },
+      { $skip: skip },
+      { $limit: lim },
+    ];
+    if (req.hideCost) {
+      pipeline.push({ $project: { costPrice: 0, wholesalePrice: 0, marginPercent: 0, _rank: 0 } });
+    } else {
+      pipeline.push({ $project: { _rank: 0 } });
+    }
+    medicines = await Medicine.aggregate(pipeline);
+    medicines = await populateCategoryName(medicines);
+  } else {
+    let query = Medicine.find(filter)
+      .sort(sort)
+      .skip(skip)
+      .limit(lim)
+      .populate('categoryId', 'name');
+
+    if (req.hideCost) {
+      query = query.select('-costPrice -wholesalePrice -marginPercent');
+    }
+    medicines = await query;
   }
-
-  const medicines = await query;
 
   res.json({
     success: true,
@@ -76,13 +125,13 @@ exports.getMedicine = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Medicine not found' });
   }
 
-  // Get batches for this medicine
+  // Get batches for this medicine. .lean() — display-only, no Mongoose hydration.
   const batches = await Batch.find({
     medicineId: medicine._id,
     storeId: medicine.storeId,
     remainingQty: { $gt: 0 },
     isExpired: false,
-  }).sort({ expiryDate: 1 });
+  }).sort({ expiryDate: 1 }).lean();
 
   res.json({ success: true, data: { ...medicine.toObject(), batches } });
 });
@@ -166,7 +215,9 @@ exports.deleteMedicine = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Medicine deleted' });
 });
 
-// @desc    Search medicines (fast POS search)
+// @desc    Search medicines (fast POS search). Ranks prefix matches above
+//          substring matches so typing "nov" surfaces medicines that start
+//          with "Nov…" before ones that just contain it.
 // @route   GET /api/medicines/search
 exports.searchMedicines = asyncHandler(async (req, res) => {
   const { q, limit = 10 } = req.query;
@@ -177,7 +228,7 @@ exports.searchMedicines = asyncHandler(async (req, res) => {
   }
 
   const s = sanitizeSearch(q);
-  let query = Medicine.find({
+  const filter = {
     storeId,
     isActive: true,
     $or: [
@@ -186,16 +237,36 @@ exports.searchMedicines = asyncHandler(async (req, res) => {
       { barcode: s },
       { sku: { $regex: s, $options: 'i' } },
     ],
-  })
-    .select('medicineName genericName barcode category salePrice mrp currentStock rackLocation schedule packSize strength')
-    .limit(parseInt(limit))
-    .sort({ medicineName: 1 });
-
-  if (req.hideCost) {
-    query = query.select('-costPrice -wholesalePrice -marginPercent');
+  };
+  if (req.query.inStock === 'true' || req.query.inStock === '1') {
+    filter.currentStock = { $gt: 0 };
   }
 
-  const medicines = await query;
+  const projectFields = {
+    medicineName: 1, genericName: 1, barcode: 1, category: 1, salePrice: 1,
+    mrp: 1, currentStock: 1, rackLocation: 1, schedule: 1, packSize: 1, strength: 1,
+    taxRate: 1,
+    ...(req.hideCost ? {} : { costPrice: 1, wholesalePrice: 1, marginPercent: 1 }),
+  };
+
+  const medicines = await Medicine.aggregate([
+    { $match: filter },
+    {
+      $addFields: {
+        _rank: {
+          $cond: [
+            { $regexMatch: { input: '$medicineName', regex: `^${s}`, options: 'i' } },
+            0,
+            1,
+          ],
+        },
+      },
+    },
+    { $sort: { _rank: 1, medicineName: 1 } },
+    { $limit: parseInt(limit) },
+    { $project: projectFields },
+  ]);
+
   res.json({ success: true, data: medicines });
 });
 
@@ -277,8 +348,14 @@ exports.getSubstitutes = asyncHandler(async (req, res) => {
   res.json({ success: true, data: substitutes });
 });
 
-// @desc    Bulk import medicines (CSV)
+// @desc    Bulk import medicines (CSV / Excel)
 // @route   POST /api/medicines/bulk-import
+//
+// Accepts a `category` value that's either:
+//   - the legacy enum (e.g. "Tablet", "Capsule"), or
+//   - the friendly Category name (e.g. "Tablets", "Syrups & Suspensions")
+// In both cases, this resolves the matching Category doc and sets `categoryId`
+// so imported rows show up under their category immediately (no Sync needed).
 exports.bulkImport = asyncHandler(async (req, res) => {
   const { medicines } = req.body;
   const storeId = req.user.storeId;
@@ -287,18 +364,114 @@ exports.bulkImport = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'No medicines to import' });
   }
 
-  let imported = 0;
-  let errors = [];
+  // Friendly name → enum (mirror of the map in category.controller)
+  const NAME_TO_ENUM = {
+    'Tablets': 'Tablet', 'Capsules': 'Capsule',
+    'Syrups & Suspensions': 'Syrup',
+    'Injections': 'Injection',
+    'Creams & Ointments': 'Cream/Ointment',
+    'Eye/Ear Drops': 'Drops',
+    'Inhalers': 'Inhaler', 'Sprays': 'Spray',
+    'Suppositories': 'Suppository',
+    'Sachets & Powders': 'Sachet',
+    'Surgical Items': 'Surgical', 'Solutions': 'Solution',
+    'Medical Devices': 'Device', 'Patches': 'Patch',
+    'Cosmetics & Skin Care': 'Cosmetic',
+    'OTC Medicines': 'OTC',
+    'Baby Care': 'Baby Care',
+    'Nutrition & Supplements': 'Nutrition',
+    'Gels & Lotions': 'Gel',
+    'Ayurvedic & Herbal': 'OTC',
+  };
+  const ENUM_TO_NAME = {
+    Tablet: 'Tablets', Capsule: 'Capsules',
+    Syrup: 'Syrups & Suspensions', Suspension: 'Syrups & Suspensions',
+    Injection: 'Injections',
+    'Cream/Ointment': 'Creams & Ointments',
+    Drops: 'Eye/Ear Drops',
+    Inhaler: 'Inhalers', Spray: 'Sprays',
+    Suppository: 'Suppositories',
+    Sachet: 'Sachets & Powders', Powder: 'Sachets & Powders',
+    Surgical: 'Surgical Items', Solution: 'Surgical Items',
+    Device: 'Medical Devices', Patch: 'Medical Devices',
+    Cosmetic: 'Cosmetics & Skin Care',
+    OTC: 'OTC Medicines',
+    'Baby Care': 'Baby Care',
+    Nutrition: 'Nutrition & Supplements',
+    Gel: 'Gels & Lotions', Lotion: 'Gels & Lotions',
+    Strip: 'Tablets',
+  };
 
-  for (const med of medicines) {
+  // Pre-load this store's category docs into a name→id map
+  const Category = require('../models/Category');
+  const cats = await Category.find({ storeId, isActive: true }).select('name _id').lean();
+  const catIdByName = new Map(cats.map((c) => [c.name, c._id]));
+
+  // Step 1 — normalise + assign defaults in memory (cheap, synchronous)
+  const docs = medicines.map((m) => {
+    const med = { ...m, storeId, addedBy: req.user._id };
+    if (!med.barcode) med.barcode = generateBarcode();
+    if (med.category) {
+      const trimmed = String(med.category).trim();
+      if (NAME_TO_ENUM[trimmed]) {
+        const friendlyName = trimmed;
+        med.category = NAME_TO_ENUM[friendlyName];
+        if (!med.categoryId && catIdByName.has(friendlyName)) {
+          med.categoryId = catIdByName.get(friendlyName);
+        }
+      } else {
+        med.category = trimmed;
+        const friendly = ENUM_TO_NAME[trimmed];
+        if (!med.categoryId && friendly && catIdByName.has(friendly)) {
+          med.categoryId = catIdByName.get(friendly);
+        }
+      }
+    }
+    return med;
+  });
+
+  // Step 2 — pre-validate so we get clean per-row errors AND only send valid rows to mongo
+  const errors = [];
+  const valid = [];
+  const validToOrig = []; // valid[k] originated at docs[validToOrig[k]]
+  docs.forEach((doc, i) => {
+    const verr = new Medicine(doc).validateSync();
+    if (verr) {
+      errors.push({
+        row: i + 2, // +2: row 1 is the header
+        medicine: doc.medicineName || `(row ${i + 2})`,
+        error: verr.message,
+      });
+    } else {
+      valid.push(doc);
+      validToOrig.push(i);
+    }
+  });
+
+  // Step 3 — single bulk insert (orders of magnitude faster than per-doc create)
+  let imported = 0;
+  if (valid.length > 0) {
     try {
-      med.storeId = storeId;
-      med.addedBy = req.user._id;
-      if (!med.barcode) med.barcode = generateBarcode();
-      await Medicine.create(med);
-      imported++;
+      const inserted = await Medicine.insertMany(valid, { ordered: false });
+      imported = inserted.length;
     } catch (err) {
-      errors.push({ medicine: med.medicineName, error: err.message });
+      // ordered:false rejects on partial failure — but successful inserts still went through
+      imported = err.insertedDocs?.length || err.result?.nInserted || 0;
+      const writeErrors = err.writeErrors || err.result?.writeErrors || [];
+      for (const we of writeErrors) {
+        const validIdx = we.index ?? we.err?.index ?? 0;
+        const origIdx = validToOrig[validIdx] ?? validIdx;
+        const med = docs[origIdx] || {};
+        errors.push({
+          row: origIdx + 2,
+          medicine: med.medicineName || `(row ${origIdx + 2})`,
+          error: we.errmsg || we.err?.errmsg || we.message || 'Insert failed',
+        });
+      }
+      // If we got a fatal error with no per-row info, surface it on row 0 so the caller knows
+      if (writeErrors.length === 0 && imported === 0) {
+        errors.push({ row: 0, medicine: '(bulk)', error: err.message || 'Bulk insert failed' });
+      }
     }
   }
 

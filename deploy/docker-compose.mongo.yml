@@ -1,0 +1,38 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  MongoDB only — runs as a Docker container so it's easy to upgrade / back up.
+#  Bound to 127.0.0.1:27017 so the world can't reach it; only the backend
+#  (which runs natively on the same VPS) can connect.
+#
+#  Start:    docker compose -f deploy/docker-compose.mongo.yml up -d
+#  Stop:     docker compose -f deploy/docker-compose.mongo.yml down
+#  Logs:     docker logs -f medstore-mongo
+#  Backup:   docker exec medstore-mongo mongodump --archive --gzip \
+#              -u "$MONGO_INITDB_ROOT_USERNAME" \
+#              -p "$MONGO_INITDB_ROOT_PASSWORD" \
+#              --authenticationDatabase admin \
+#              > backup-$(date +%F).archive.gz
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: medstore-mongo
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:27017:27017"   # localhost-only — never exposed publicly
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASS}
+      MONGO_INITDB_DATABASE: medstore
+    volumes:
+      - mongo-data:/data/db
+      - mongo-config:/data/configdb
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand('ping').ok"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  mongo-data:
+  mongo-config:

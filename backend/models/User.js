@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { defaultPermissionsFor } = require('../config/modules');
 
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
@@ -22,7 +23,13 @@ const userSchema = new mongoose.Schema({
   loginAttempts: { type: Number, default: 0 },
   lockUntil: Date,
 
-  // Permissions override (optional)
+  // Per-module permission matrix: { moduleKey: { view, add, edit, delete } }
+  modulePermissions: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {},
+  },
+
+  // Legacy flag-style permissions kept for back-compat with code paths that still read them.
   permissions: {
     canProcessReturns: { type: Boolean, default: false },
     canViewCostPrice: { type: Boolean, default: false },
@@ -38,11 +45,9 @@ const userSchema = new mongoose.Schema({
   timestamps: true,
 });
 
-// Compound unique: email + storeId (same email can exist in different stores, or as SuperAdmin)
 userSchema.index({ email: 1, storeId: 1 }, { unique: true });
 userSchema.index({ storeId: 1, role: 1 });
 
-// Hash password
 userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
   const salt = await bcrypt.genSalt(12);
@@ -50,12 +55,10 @@ userSchema.pre('save', async function (next) {
   next();
 });
 
-// Match password
 userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-// Generate JWT
 userSchema.methods.getSignedJwtToken = function () {
   return jwt.sign(
     { id: this._id, role: this.role, storeId: this.storeId },
@@ -64,16 +67,25 @@ userSchema.methods.getSignedJwtToken = function () {
   );
 };
 
-// Set role-based permissions
+// Reset both legacy flags and module matrix to the role's defaults.
 userSchema.methods.setDefaultPermissions = function () {
-  const permMap = {
-    SuperAdmin: { canProcessReturns: true, canViewCostPrice: true, canManagePurchases: true, canManageCustomers: true, canViewReports: true, maxDiscountPercent: 100 },
-    StoreAdmin: { canProcessReturns: true, canViewCostPrice: true, canManagePurchases: true, canManageCustomers: true, canViewReports: true, maxDiscountPercent: 100 },
-    Pharmacist: { canProcessReturns: true, canViewCostPrice: false, canManagePurchases: false, canManageCustomers: true, canViewReports: false, maxDiscountPercent: 15 },
-    Cashier: { canProcessReturns: false, canViewCostPrice: false, canManagePurchases: false, canManageCustomers: false, canViewReports: false, maxDiscountPercent: 10 },
+  const legacyMap = {
+    SuperAdmin:     { canProcessReturns: true,  canViewCostPrice: true,  canManagePurchases: true,  canManageCustomers: true,  canViewReports: true,  maxDiscountPercent: 100 },
+    StoreAdmin:     { canProcessReturns: true,  canViewCostPrice: true,  canManagePurchases: true,  canManageCustomers: true,  canViewReports: true,  maxDiscountPercent: 100 },
+    Pharmacist:     { canProcessReturns: true,  canViewCostPrice: false, canManagePurchases: false, canManageCustomers: true,  canViewReports: false, maxDiscountPercent: 15 },
+    Cashier:        { canProcessReturns: false, canViewCostPrice: false, canManagePurchases: false, canManageCustomers: false, canViewReports: false, maxDiscountPercent: 10 },
     InventoryStaff: { canProcessReturns: false, canViewCostPrice: false, canManagePurchases: false, canManageCustomers: false, canViewReports: false, maxDiscountPercent: 0 },
   };
-  this.permissions = permMap[this.role] || permMap.Cashier;
+  this.permissions = legacyMap[this.role] || legacyMap.Cashier;
+  this.modulePermissions = defaultPermissionsFor(this.role);
+  this.markModified('modulePermissions');
+};
+
+// Permission check honoring SuperAdmin/StoreAdmin override and module matrix.
+userSchema.methods.can = function (moduleKey, action = 'view') {
+  if (this.role === 'SuperAdmin' || this.role === 'StoreAdmin') return true;
+  const m = this.modulePermissions?.[moduleKey];
+  return !!(m && m[action]);
 };
 
 module.exports = mongoose.model('User', userSchema);

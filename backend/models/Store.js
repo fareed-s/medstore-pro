@@ -23,17 +23,26 @@ const storeSchema = new mongoose.Schema({
   // Subscription
   plan: {
     type: String,
-    enum: ['Free Trial', 'Basic', 'Standard', 'Premium'],
-    default: 'Free Trial',
+    enum: ['Trial', 'Monthly', '6-Month', 'Yearly'],
+    default: 'Trial',
   },
   planStartDate: { type: Date, default: Date.now },
   planEndDate: Date,
-  maxProducts: { type: Number, default: 100 },
-  maxStaff: { type: Number, default: 2 },
+  planPrice: { type: Number, default: 0 },          // Custom amount entered by SuperAdmin at create/change time
+  trialDays: { type: Number, default: 7 },          // Used only when plan === 'Trial'
+  maxProducts: { type: Number, default: 100000 },
+  maxStaff: { type: Number, default: 100 },
 
   // Status
   isApproved: { type: Boolean, default: false },
   isActive: { type: Boolean, default: true },
+  suspendedReason: { type: String },                // 'Plan expired' | 'Manually suspended' | custom
+  suspendedAt: Date,
+
+  // SuperAdmin-controlled gate. When true the master catalog is auto-synced
+  // to this store's Medicine collection (stock = 0). Default off — admins
+  // opt stores in explicitly.
+  hasMasterCatalog: { type: Boolean, default: false },
   approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   approvedAt: Date,
 
@@ -73,5 +82,9 @@ const storeSchema = new mongoose.Schema({
 storeSchema.index({ email: 1 });
 storeSchema.index({ slug: 1 });
 storeSchema.index({ isApproved: 1, isActive: 1 });
+// Daily plan-expiry cron + lazy auth-middleware suspend both filter on
+// (isActive, planEndDate) — covering both fields keeps the scan tiny.
+storeSchema.index({ isActive: 1, planEndDate: 1 });
+storeSchema.index({ hasMasterCatalog: 1 });
 
 module.exports = mongoose.model('Store', storeSchema);

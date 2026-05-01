@@ -4,6 +4,8 @@ const ctrl = require('../controllers/category.controller');
 
 router.use(protect);
 
+router.post('/sync-medicines', authorize('SuperAdmin', 'StoreAdmin'), ctrl.syncMedicineCategories);
+
 router.route('/')
   .get(ctrl.getCategories)
   .post(authorize('SuperAdmin', 'StoreAdmin'), ctrl.createCategory);

@@ -26,6 +26,11 @@ batchSchema.index({ storeId: 1, medicineId: 1, expiryDate: 1 });
 batchSchema.index({ storeId: 1, batchNumber: 1 });
 batchSchema.index({ storeId: 1, expiryDate: 1, remainingQty: 1 });
 batchSchema.index({ storeId: 1, isExpired: 1 });
+// FEFO selection inside POS sale: storeId + medicineId + isExpired + remainingQty
+// is the exact filter shape — adding it covers the hot path on every cart line.
+batchSchema.index({ storeId: 1, medicineId: 1, isExpired: 1, remainingQty: 1, expiryDate: 1 });
+// Expiry dashboard groups by (storeId, isExpired, remainingQty) before slicing dates.
+batchSchema.index({ storeId: 1, isExpired: 1, remainingQty: 1 });
 
 // Check if expired
 batchSchema.pre('save', function (next) {

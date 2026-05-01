@@ -201,4 +201,115 @@ exports.getAdjustments = asyncHandler(async (req, res) => {
   res.json({ success: true, data: adjustments, pagination: { total, page: parseInt(page), limit: parseInt(limit) } });
 });
 
+// @desc    Quick Stock-In — bulk-create batches from a punching screen.
+//          Each row: { medicineId, batchNumber, costPrice, salePrice, mrp,
+//          taxRate, discountPercent, quantity, bonusQuantity, expiryDate }.
+//          Returns per-row errors so the UI can highlight bad rows without
+//          losing the good ones.
+// @route   POST /api/batches/quick-stock-in
+exports.quickStockIn = asyncHandler(async (req, res) => {
+  const storeId = req.user.storeId;
+  if (!storeId) return res.status(400).json({ success: false, message: 'Store ID required' });
+
+  const { rows } = req.body;
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return res.status(400).json({ success: false, message: 'No rows to save' });
+  }
+
+  const errors = [];
+  const created = [];
+  const touchedMeds = new Set();
+
+  // ── PERF ───────────────────────────────────────────────────────────────
+  // Batch-load all referenced medicines in one query (was N findOnes inside
+  // the loop). 100-row punch-screen → 1 DB hit instead of 100.
+  const wantedIds = [...new Set(rows.map((r) => r.medicineId).filter(Boolean))];
+  const medsLoaded = await Medicine.find({ _id: { $in: wantedIds }, storeId });
+  const medById = new Map(medsLoaded.map((m) => [String(m._id), m]));
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const rowNo = i + 1;
+    if (!r.medicineId)   { errors.push({ row: rowNo, error: 'Medicine not selected' });   continue; }
+    if (!r.batchNumber)  { errors.push({ row: rowNo, error: 'Batch number required' });   continue; }
+    if (!r.expiryDate)   { errors.push({ row: rowNo, error: 'Expiry date required' });    continue; }
+
+    const qty   = parseInt(r.quantity)      || 0;
+    const bonus = parseInt(r.bonusQuantity) || 0;
+    const totalQty = qty + bonus;
+    if (totalQty <= 0) {
+      errors.push({ row: rowNo, error: 'Quantity must be greater than zero' });
+      continue;
+    }
+
+    const medicine = medById.get(String(r.medicineId));
+    if (!medicine) {
+      errors.push({ row: rowNo, error: 'Medicine not found in this store' });
+      continue;
+    }
+
+    // Apply purchase discount (line-item) onto the per-unit cost so the batch
+    // cost reflects what the store actually paid, not the supplier list price.
+    const listCost = parseFloat(r.costPrice);
+    const disc = parseFloat(r.discountPercent) || 0;
+    const effectiveCost = Number.isFinite(listCost)
+      ? +(listCost * (1 - disc / 100)).toFixed(2)
+      : medicine.costPrice;
+
+    try {
+      const batch = await Batch.create({
+        storeId,
+        medicineId: medicine._id,
+        batchNumber: r.batchNumber,
+        expiryDate: new Date(r.expiryDate),
+        quantity: totalQty,
+        remainingQty: totalQty,
+        costPrice: effectiveCost,
+        salePrice: parseFloat(r.salePrice) || medicine.salePrice,
+        mrp: parseFloat(r.mrp) || medicine.mrp,
+        notes: bonus > 0 ? `Quick Stock-In · Bonus: ${bonus}` : 'Quick Stock-In',
+        addedBy: req.user._id,
+      });
+
+      // Update master prices + tax on the medicine if the user provided new
+      // values. Tax % isn't on Batch, so it lives on the Medicine record.
+      if (Number.isFinite(listCost))                     medicine.costPrice = effectiveCost;
+      if (Number.isFinite(parseFloat(r.salePrice)))      medicine.salePrice = parseFloat(r.salePrice);
+      if (Number.isFinite(parseFloat(r.mrp)))            medicine.mrp = parseFloat(r.mrp);
+      if (r.taxRate !== undefined && r.taxRate !== '' &&
+          Number.isFinite(parseFloat(r.taxRate)))        medicine.taxRate = parseFloat(r.taxRate);
+      await medicine.save();
+
+      await StockAdjustment.create({
+        storeId,
+        medicineId: medicine._id,
+        batchId: batch._id,
+        type: 'increase',
+        quantity: totalQty,
+        previousQty: medicine.currentStock,
+        newQty: medicine.currentStock + totalQty,
+        reason: 'Quick Stock-In',
+        adjustedBy: req.user._id,
+        status: 'approved',
+      }).catch(() => {});
+
+      created.push(batch._id);
+      touchedMeds.add(medicine._id.toString());
+    } catch (err) {
+      errors.push({ row: rowNo, error: err.message || 'Failed to save row' });
+    }
+  }
+
+  // Recalc stock once per touched medicine (avoids redundant aggregations).
+  for (const id of touchedMeds) {
+    try { await recalcStock(id, storeId); } catch {}
+  }
+
+  res.status(created.length ? 201 : 400).json({
+    success: created.length > 0,
+    created: created.length,
+    errors,
+  });
+});
+
 module.exports.recalcStock = recalcStock;

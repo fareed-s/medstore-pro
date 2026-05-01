@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from 'react-toastify';
 
@@ -17,7 +17,10 @@ export default function LoginPage() {
       toast.success('Welcome back!');
       navigate('/dashboard');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Login failed');
+      // loginThunk re-throws with the backend message in err.message; older
+      // axios shapes also live under err.response.data.message.
+      const msg = err?.response?.data?.message || err?.message || 'Login failed';
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -84,11 +87,9 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="text-center mt-6 text-sm text-gray-500">
-            Don't have a store? <Link to="/register" className="text-primary-600 font-semibold hover:underline">Register here</Link>
+          <p className="text-center mt-6 text-xs text-gray-400">
+            New stores are created by the platform administrator.
           </p>
-
-         
         </div>
       </div>
     </div>

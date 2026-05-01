@@ -26,9 +26,11 @@ exports.createSale = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Cart is empty' });
   }
 
-  // Generate invoice number
+  // Generate invoice number — uses getNextUnique so a stale counter (e.g. after
+  // a reseed) can't produce a duplicate. As a final safety, the Sale.create call
+  // below is also wrapped in an E11000 retry loop.
   let invoiceNo;
-  try { invoiceNo = await Counter.getNext(storeId, 'sale', 'INV'); }
+  try { invoiceNo = await Counter.getNextUnique(storeId, 'sale', 'INV', Sale, 'invoiceNo'); }
   catch (err) { return res.status(500).json({ success: false, message: 'Failed to generate invoice number: ' + err.message }); }
 
   let subtotal = 0;
@@ -37,10 +39,40 @@ exports.createSale = asyncHandler(async (req, res) => {
   let isControlledDrugSale = false;
   const processedItems = [];
 
+  // ── PERF ──────────────────────────────────────────────────────────────
+  // Batch-load every cart-item's Medicine in ONE query (was N findOnes).
+  // Same for Store (for allowNegativeStock) and the cart-wide Batch list.
+  // Saves (cartItems × 2 + 1) DB hits — for a 10-item sale, ~20→3.
+  const validIds = items
+    .filter((i) => i.medicineId)
+    .map((i) => i.medicineId);
+
+  const [medicineDocs, store, allBatches] = await Promise.all([
+    Medicine.find({ _id: { $in: validIds }, storeId }),
+    require('../models/Store').findById(storeId).select('settings.allowNegativeStock').lean(),
+    Batch.find({
+      storeId,
+      medicineId: { $in: validIds },
+      remainingQty: { $gt: 0 },
+      isExpired: false,
+    }).sort({ expiryDate: 1 }),
+  ]);
+
+  const medicineById = new Map(medicineDocs.map((m) => [String(m._id), m]));
+  // Group FEFO-sorted batches by medicineId for O(1) lookup inside the loop.
+  const batchesByMed = new Map();
+  for (const b of allBatches) {
+    const k = String(b.medicineId);
+    if (!batchesByMed.has(k)) batchesByMed.set(k, []);
+    batchesByMed.get(k).push(b);
+  }
+  const allowNegative = !!store?.settings?.allowNegativeStock;
+  const touchedMeds = new Set();
+
   for (const item of items) {
     if (!item.medicineId) continue;
-    
-    const medicine = await Medicine.findOne({ _id: item.medicineId, storeId });
+
+    const medicine = medicineById.get(String(item.medicineId));
     if (!medicine) {
       return res.status(400).json({ success: false, message: `Medicine not found: ${item.medicineName || item.medicineId}` });
     }
@@ -63,15 +95,13 @@ exports.createSale = asyncHandler(async (req, res) => {
         remainingQty -= deduct;
       }
     }
-    
-    if (remainingQty > 0 && !item.batchId) {
-      // FEFO — auto pick nearest expiry
-      const batches = await Batch.find({
-        storeId, medicineId: medicine._id, remainingQty: { $gt: 0 }, isExpired: false,
-      }).sort({ expiryDate: 1 });
 
+    if (remainingQty > 0 && !item.batchId) {
+      // FEFO — use the pre-loaded, pre-sorted batches list for this medicine.
+      const batches = batchesByMed.get(String(medicine._id)) || [];
       for (const batch of batches) {
         if (remainingQty <= 0) break;
+        if (batch.remainingQty <= 0) continue;
         const deduct = Math.min(remainingQty, batch.remainingQty);
         batch.remainingQty -= deduct;
         await batch.save();
@@ -80,16 +110,11 @@ exports.createSale = asyncHandler(async (req, res) => {
       }
     }
 
-    if (remainingQty > 0) {
-      // Check if store allows negative stock
-      const Store = require('../models/Store');
-      const store = await Store.findById(storeId);
-      if (!store?.settings?.allowNegativeStock) {
-        return res.status(400).json({
-          success: false,
-          message: `Insufficient stock for ${medicine.medicineName}. Need: ${item.quantity}, Available: ${(parseInt(item.quantity) || 1) - remainingQty}`,
-        });
-      }
+    if (remainingQty > 0 && !allowNegative) {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient stock for ${medicine.medicineName}. Need: ${item.quantity}, Available: ${(parseInt(item.quantity) || 1) - remainingQty}`,
+      });
     }
 
     // Calculate line totals
@@ -115,9 +140,15 @@ exports.createSale = asyncHandler(async (req, res) => {
       schedule: medicine.schedule, requiresPrescription: medicine.requiresPrescription,
     });
 
-    // Recalc stock
-    try { await recalcStock(medicine._id, storeId); } catch {}
+    touchedMeds.add(String(medicine._id));
   }
+
+  // Recalc stock once per medicine after the cart is processed (was once per
+  // cart item — a 10-item sale ran 10 aggregations, now runs at most 10
+  // unique medicines worth, in parallel).
+  await Promise.all(
+    Array.from(touchedMeds).map((id) => recalcStock(id, storeId).catch(() => {}))
+  );
 
   if (processedItems.length === 0) {
     return res.status(400).json({ success: false, message: 'No valid items in cart' });
@@ -156,9 +187,9 @@ exports.createSale = asyncHandler(async (req, res) => {
   const changeGiven = Math.max(0, totalPaid - netTotal);
   const balanceDue = Math.max(0, netTotal - totalPaid);
 
-  const sale = await Sale.create({
+  const buildSaleDoc = (invNo) => ({
     storeId,
-    invoiceNo,
+    invoiceNo: invNo,
     customerId: customerId || null,
     customerName: customerName || 'Walk-in Customer',
     customerPhone,
@@ -183,6 +214,27 @@ exports.createSale = asyncHandler(async (req, res) => {
     isControlledDrugSale,
     notes,
   });
+
+  // Final safety net — if a duplicate slips through (race condition with another
+  // POS terminal), bump the counter past existing rows and try again.
+  let sale;
+  let lastErr;
+  let currentInvoice = invoiceNo;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      sale = await Sale.create(buildSaleDoc(currentInvoice));
+      break;
+    } catch (err) {
+      lastErr = err;
+      if (err.code !== 11000) throw err;
+      await Counter.bumpToMaxFromCollection(storeId, 'sale', 'INV', Sale, 'invoiceNo');
+      currentInvoice = await Counter.getNextUnique(storeId, 'sale', 'INV', Sale, 'invoiceNo');
+    }
+  }
+  if (!sale) {
+    return res.status(500).json({ success: false, message: 'Failed to save sale: ' + (lastErr?.message || 'duplicate invoice') });
+  }
+  invoiceNo = currentInvoice;
 
   await ActivityLog.create({
     storeId, userId: req.user._id,
@@ -300,7 +352,7 @@ exports.processReturn = asyncHandler(async (req, res) => {
   if (!items || items.length === 0) return res.status(400).json({ success: false, message: 'No items to return' });
   if (!reason) return res.status(400).json({ success: false, message: 'Return reason required' });
 
-  const returnNo = await Counter.getNext(storeId, 'return', 'RET');
+  const returnNo = await Counter.getNextUnique(storeId, 'return', 'RET', SaleReturn, 'returnNo');
   let refundAmount = 0;
   const returnItems = [];
 

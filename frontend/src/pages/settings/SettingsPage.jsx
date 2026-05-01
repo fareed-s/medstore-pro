@@ -38,6 +38,19 @@ export default function SettingsPage() {
     </div>
   );
 
+  // Small reusable toggle row used inside Section grid cells.
+  const ToggleField = ({ label, checked, onChange }) => (
+    <label className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
+      <input
+        type="checkbox"
+        checked={!!checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="w-4 h-4 text-primary-600 rounded"
+      />
+      <span className="text-sm text-gray-700">{label}</span>
+    </label>
+  );
+
   return (
     <div className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-heading font-bold text-gray-900 mb-1">Store Settings</h1>
@@ -77,10 +90,49 @@ export default function SettingsPage() {
           <div><label className="label">Reorder Lead Days</label><input type="number" className="input-field" value={settings.reorderLeadDays || 7} onChange={(e) => setSettings({ ...settings, reorderLeadDays: parseInt(e.target.value) })} /></div>
         </Section>
 
-        <Section title="Tax & Receipt">
+        <Section title="Tax">
           <div><label className="label">Default Tax Rate (%)</label><input type="number" className="input-field" value={settings.defaultTaxRate || 0} onChange={(e) => setSettings({ ...settings, defaultTaxRate: parseFloat(e.target.value) })} /></div>
           <div className="flex items-center gap-2 pt-6"><input type="checkbox" checked={settings.taxInclusive || false} onChange={(e) => setSettings({ ...settings, taxInclusive: e.target.checked })} className="w-4 h-4 text-primary-600 rounded" /><label className="text-sm text-gray-600">Tax inclusive pricing</label></div>
-          <div><label className="label">Receipt Footer</label><input className="input-field" value={settings.receiptFooter || ''} onChange={(e) => setSettings({ ...settings, receiptFooter: e.target.value })} /></div>
+        </Section>
+
+        <Section title="Invoice / Receipt Layout">
+          <div className="sm:col-span-2 lg:col-span-3">
+            <label className="label">Receipt Header (line above store name)</label>
+            <input className="input-field" placeholder="e.g. Bismillah · Government Approved Pharmacy"
+              value={settings.receiptHeader || ''}
+              onChange={(e) => setSettings({ ...settings, receiptHeader: e.target.value })} />
+          </div>
+          <div className="sm:col-span-2 lg:col-span-3">
+            <label className="label">Receipt Footer (thank-you / return policy)</label>
+            <input className="input-field" placeholder="e.g. Thank you! Return within 7 days with this receipt."
+              value={settings.receiptFooter || ''}
+              onChange={(e) => setSettings({ ...settings, receiptFooter: e.target.value })} />
+          </div>
+
+          <ToggleField
+            label="Show store logo"
+            checked={settings.showLogoOnReceipt !== false}
+            onChange={(v) => setSettings({ ...settings, showLogoOnReceipt: v })} />
+          <ToggleField
+            label="Show Drug License #"
+            checked={settings.showDLOnReceipt !== false}
+            onChange={(v) => setSettings({ ...settings, showDLOnReceipt: v })} />
+          <ToggleField
+            label="Show GST / tax number"
+            checked={settings.showGSTOnReceipt !== false}
+            onChange={(v) => setSettings({ ...settings, showGSTOnReceipt: v })} />
+          <ToggleField
+            label="Show batch numbers per item"
+            checked={settings.showBatchOnReceipt !== false}
+            onChange={(v) => setSettings({ ...settings, showBatchOnReceipt: v })} />
+          <ToggleField
+            label="Show expiry dates per item"
+            checked={settings.showExpiryOnReceipt || false}
+            onChange={(v) => setSettings({ ...settings, showExpiryOnReceipt: v })} />
+          <ToggleField
+            label="Show itemised tax breakdown"
+            checked={settings.showTaxBreakdown !== false}
+            onChange={(v) => setSettings({ ...settings, showTaxBreakdown: v })} />
         </Section>
 
         <Section title="Discounts">

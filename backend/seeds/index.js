@@ -161,9 +161,10 @@ async function seedDatabase() {
       drugLicenseNumber: 'DL-LHR-2024-00145',
       drugLicenseExpiry: new Date('2026-12-31'),
       gstNumber: 'GSTIN1234567890',
-      plan: 'Premium',
-      maxProducts: Infinity,
-      maxStaff: Infinity,
+      plan: 'Yearly',
+      planPrice: 0,
+      planStartDate: new Date(),
+      planEndDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
       isApproved: true,
       approvedAt: new Date(),
     });

@@ -4,6 +4,7 @@ import API from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatDate, getExpiryStatus, getScheduleBadge, getStockStatus } from '../../utils/helpers';
 import { toast } from 'react-toastify';
+import { confirmDanger } from '../../utils/swal';
 import { HiOutlinePencil, HiOutlineTrash, HiOutlinePlus } from 'react-icons/hi';
 
 export default function MedicineDetailPage() {
@@ -39,7 +40,7 @@ export default function MedicineDetailPage() {
   };
 
   const deleteMedicine = async () => {
-    if (!window.confirm('Are you sure you want to delete this medicine?')) return;
+    if (!(await confirmDanger('This medicine will be removed from your inventory.', { title: 'Delete medicine?', confirmText: 'Delete' }))) return;
     try {
       await API.delete(`/medicines/${id}`);
       toast.success('Medicine deleted');
