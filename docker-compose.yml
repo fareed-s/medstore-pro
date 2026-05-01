@@ -1,0 +1,99 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  MedStore Pro — production Docker stack
+#
+#  Three containers on a private network:
+#    - mongo : MongoDB 7 (persistent volume, localhost-only port)
+#    - api   : Node 20 backend (internal-only)
+#    - web   : nginx serving the React build + reverse-proxy to api
+#
+#  Public entrypoint: http://VPS_IP:8085  (mapped from web:80)
+#
+#  Quick commands:
+#    docker compose up -d --build      # build + start
+#    docker compose logs -f api        # tail backend logs
+#    docker compose ps                 # container status
+#    docker compose restart api        # restart backend after env change
+#    docker compose down               # stop everything (data preserved)
+#    docker compose down -v            # nuke everything INCLUDING the DB
+#
+#  See deploy/DEPLOY.md for full step-by-step.
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: medstore-mongo
+    restart: unless-stopped
+    ports:
+      # Bound to localhost only — no public access. The api container talks
+      # to it over the internal medstore-net network using DNS name `mongo`.
+      - "127.0.0.1:27020:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASS}
+      MONGO_INITDB_DATABASE: ${MONGO_DB}
+    volumes:
+      - mongo-data:/data/db
+      - mongo-config:/data/configdb
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "-u", "${MONGO_USER}", "-p", "${MONGO_PASS}", "--authenticationDatabase", "admin", "--eval", "db.runCommand('ping').ok"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - medstore-net
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: medstore-api
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      MONGODB_URI: mongodb://${MONGO_USER}:${MONGO_PASS}@mongo:27017/${MONGO_DB}?authSource=admin
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
+      SEED_SUPERADMIN_EMAIL: ${SEED_SUPERADMIN_EMAIL:-superadmin@medstore.com}
+      SEED_SUPERADMIN_PASSWORD: ${SEED_SUPERADMIN_PASSWORD:-admin123456}
+    volumes:
+      # Avatars + future uploaded files survive image rebuilds.
+      - ./backend/uploads:/app/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - medstore-net
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: medstore-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "${WEB_PORT:-8085}:80"
+    networks:
+      - medstore-net
+
+volumes:
+  mongo-data:
+  mongo-config:
+
+networks:
+  medstore-net:
+    name: medstore-net
+    driver: bridge
