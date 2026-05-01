@@ -3,6 +3,7 @@ import API from '../../utils/api';
 import { formatDate, apiError } from '../../utils/helpers';
 import { toast } from 'react-toastify';
 import { confirm, confirmDanger } from '../../utils/swal';
+import { copyToClipboard } from '../../utils/clipboard';
 import {
   HiOutlineOfficeBuilding, HiOutlineCheck, HiOutlineBan, HiOutlineSearch,
   HiOutlineEye, HiOutlinePlus, HiOutlineX, HiOutlineClipboardCopy,
@@ -238,8 +239,9 @@ export default function AdminStoresPage() {
   const setField = (key, value) => setCreateForm(f => ({ ...f, [key]: value }));
 
   const copyText = async (text, label = 'Copied') => {
-    try { await navigator.clipboard.writeText(text); toast.success(label); }
-    catch { toast.error('Copy failed — please copy manually'); }
+    const ok = await copyToClipboard(text);
+    if (ok) toast.success(label);
+    else    toast.error('Copy failed — please copy manually');
   };
 
   // Build a WhatsApp-ready single-message of login details. The login URL is
