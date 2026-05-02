@@ -7,6 +7,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import App from './App';
 import store from './store';
 import { AuthProvider } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import './index.css';
 import { registerSW } from './utils/pwa';
 
@@ -14,10 +15,12 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ReduxProvider store={store}>
       <BrowserRouter>
-        <AuthProvider>
-          <App />
-          <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} theme="colored" />
-        </AuthProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <App />
+            <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} theme="colored" />
+          </AuthProvider>
+        </ThemeProvider>
       </BrowserRouter>
     </ReduxProvider>
   </React.StrictMode>

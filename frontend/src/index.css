@@ -6,20 +6,57 @@
   body {
     @apply bg-surface-light text-gray-800 font-sans;
   }
-  .dark body, body.dark {
-    @apply bg-gray-900 text-gray-100;
-  }
   h1, h2, h3, h4, h5, h6 {
     @apply font-heading;
   }
-  /* Dark mode overrides */
-  .dark .card { @apply bg-gray-800 border-gray-700; }
-  .dark .stat-card { @apply bg-gray-800 border-gray-700; }
-  .dark .input-field { @apply bg-gray-800 border-gray-600 text-gray-100 placeholder-gray-500; }
-  .dark .table-header { @apply bg-gray-800 text-gray-300; }
-  .dark .sidebar-link { @apply text-gray-300 hover:bg-white/10; }
-  .dark header { @apply bg-gray-800 border-gray-700; }
-  .dark main { @apply bg-gray-900; }
+
+  /* ─── Dark mode — site-wide overrides ─────────────────────────────────── */
+  /* Tailwind's `darkMode: 'class'` flips the .dark class on <html>; these
+     rules then re-skin every common surface so the whole app stays coherent
+     in dark mode without us having to sprinkle `dark:` classes on every JSX
+     node. */
+  .dark body                    { @apply bg-gray-900 text-gray-100; }
+  .dark main                    { @apply bg-gray-900; }
+  .dark header                  { @apply bg-gray-800 border-gray-800; }
+
+  .dark .card                   { @apply bg-gray-800 border-gray-700 text-gray-100; }
+  .dark .stat-card              { @apply bg-gray-800 border-gray-700; }
+
+  .dark .input-field            { @apply bg-gray-900 border-gray-700 text-gray-100 placeholder-gray-500; }
+  .dark .input-field:focus      { @apply border-primary-500 ring-primary-500/40; }
+  .dark .label                  { @apply text-gray-400; }
+
+  .dark .table-header           { @apply bg-gray-800/60 text-gray-400; }
+  .dark table                   { @apply text-gray-200; }
+  .dark tbody tr                { @apply border-gray-700; }
+  .dark tbody tr:hover          { @apply bg-gray-800/60; }
+  .dark .divide-y > *           { border-color: rgb(55 65 81); }
+
+  .dark .btn-secondary          { @apply bg-gray-800 text-gray-200 border-gray-700 hover:bg-gray-700; }
+  .dark .btn-ghost              { @apply text-gray-300 hover:bg-gray-800; }
+
+  .dark .badge-gray             { @apply bg-gray-700 text-gray-300; }
+
+  /* Headings inside dark surfaces — keep them readable. */
+  .dark h1, .dark h2, .dark h3, .dark h4, .dark h5, .dark h6 { @apply text-gray-100; }
+  .dark .text-gray-900          { @apply text-gray-100; }
+  .dark .text-gray-800          { @apply text-gray-200; }
+  .dark .text-gray-700          { @apply text-gray-300; }
+  .dark .text-gray-600          { @apply text-gray-400; }
+  .dark .text-gray-500          { @apply text-gray-400; }
+  .dark .text-gray-400          { @apply text-gray-500; }
+
+  .dark .bg-white               { @apply bg-gray-800; }
+  .dark .bg-gray-50             { @apply bg-gray-800/40; }
+  .dark .bg-gray-100            { @apply bg-gray-800/70; }
+
+  .dark .border-gray-100        { @apply border-gray-700; }
+  .dark .border-gray-200        { @apply border-gray-700; }
+  .dark .divide-gray-50         { @apply divide-gray-700; }
+
+  /* Sidebar already uses an emerald gradient — keep it as-is in both modes,
+     it reads fine on dark. Just darken the hover slightly. */
+  .dark .sidebar-link:hover     { @apply bg-white/5; }
 }
 
 @layer components {
@@ -56,10 +93,10 @@
     @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
   }
   .badge-green { @apply bg-emerald-100 text-emerald-700; }
-  .badge-red { @apply bg-red-100 text-red-700; }
+  .badge-red   { @apply bg-red-100 text-red-700; }
   .badge-amber { @apply bg-amber-100 text-amber-700; }
-  .badge-blue { @apply bg-blue-100 text-blue-700; }
-  .badge-gray { @apply bg-gray-100 text-gray-600; }
+  .badge-blue  { @apply bg-blue-100 text-blue-700; }
+  .badge-gray  { @apply bg-gray-100 text-gray-600; }
 
   .stat-card {
     @apply card flex items-center gap-4 hover:shadow-cardHover transition-shadow duration-300;
@@ -89,6 +126,8 @@ input[type="number"]:focus {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+.dark ::-webkit-scrollbar-thumb { background: #374151; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
 
 /* Sidebar thin scrollbar (white on dark bg) */
 nav.scrollbar-thin::-webkit-scrollbar { width: 4px; }
@@ -96,7 +135,7 @@ nav.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
 nav.scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
 nav.scrollbar-thin::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
 
-/* Scroll isolation — prevent scroll bleeding between panels */
+/* Scroll isolation */
 .overscroll-contain { overscroll-behavior: contain; }
 
 /* Hide scrollbar on sidebar until hover */
@@ -105,3 +144,8 @@ nav.scrollbar-thin:hover { scrollbar-color: rgba(255,255,255,0.15) transparent; 
 
 /* Toast overrides */
 .Toastify__toast { border-radius: 12px !important; font-family: 'DM Sans', sans-serif !important; }
+
+/* Smooth color transitions when toggling theme so the flip doesn't jar. */
+html, body, .card, .stat-card, header, main, .input-field, .table-header {
+  transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease;
+}

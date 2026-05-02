@@ -63,6 +63,7 @@ const storeSchema = new mongoose.Schema({
     receiptHeader: String,
     receiptFooter: { type: String, default: 'Thank you for your purchase!' },
     showLogoOnReceipt: { type: Boolean, default: true },
+    logoPosition: { type: String, enum: ['left', 'center', 'right'], default: 'center' },
     showDLOnReceipt: { type: Boolean, default: true },
     showGSTOnReceipt: { type: Boolean, default: true },
     showBatchOnReceipt: { type: Boolean, default: true },

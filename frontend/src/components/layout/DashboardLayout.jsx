@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 import { ROLE_LABELS } from '../../utils/helpers';
 import SubscriptionBanner from '../SubscriptionBanner';
 import {
@@ -10,7 +11,7 @@ import {
   HiOutlineClipboardCheck, HiOutlineTrendingDown, HiOutlineLocationMarker,
   HiOutlineShoppingCart, HiOutlineTruck, HiOutlineDocumentText, HiOutlineInboxIn,
   HiOutlineOfficeBuilding, HiOutlineUpload, HiOutlineLightningBolt,
-  HiOutlineUser
+  HiOutlineUser, HiOutlineSun, HiOutlineMoon,
 } from 'react-icons/hi';
 
 // SuperAdmin (SaaS owner) navigation — kept lean: only what we actively use.
@@ -103,7 +104,7 @@ export default function DashboardLayout() {
       </nav>
 
       <div className="p-4 border-t border-white/10">
-        <div className="flex items-center gap-3 mb-3">
+        <div className="flex items-center gap-3">
           <div className="w-9 h-9 bg-emerald-400/20 rounded-full flex items-center justify-center text-white font-bold text-sm">
             {user?.name?.charAt(0)?.toUpperCase()}
           </div>
@@ -112,10 +113,6 @@ export default function DashboardLayout() {
             <p className="text-emerald-300/50 text-xs">{ROLE_LABELS[user?.role]}</p>
           </div>
         </div>
-        <button onClick={handleLogout} className="sidebar-link w-full text-red-300/80 hover:text-red-200 hover:bg-red-500/10">
-          <HiOutlineLogout className="w-5 h-5" />
-          <span>Logout</span>
-        </button>
       </div>
     </div>
   );
@@ -144,6 +141,7 @@ export default function DashboardLayout() {
           <div className="flex-1 sm:hidden" />
 
           <div className="flex items-center gap-2 ml-auto">
+            <ThemeToggle />
             <button onClick={() => navigate('/notifications')} className="btn-ghost p-2 relative" title="Notifications">
               <HiOutlineBell className="w-5 h-5" />
               <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
@@ -160,6 +158,22 @@ export default function DashboardLayout() {
         </main>
       </div>
     </div>
+  );
+}
+
+// ─── ThemeToggle — sun/moon button in the header ───────────────────────────
+function ThemeToggle() {
+  const { theme, toggle } = useTheme();
+  const isDark = theme === 'dark';
+  return (
+    <button
+      onClick={toggle}
+      title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      aria-label="Toggle theme"
+      className="btn-ghost p-2"
+    >
+      {isDark ? <HiOutlineSun className="w-5 h-5" /> : <HiOutlineMoon className="w-5 h-5" />}
+    </button>
   );
 }
 

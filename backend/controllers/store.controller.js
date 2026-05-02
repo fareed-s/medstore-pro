@@ -1,5 +1,6 @@
 const Store = require('../models/Store');
 const { asyncHandler } = require('../utils/errorHandler');
+const { invalidateStoreCache } = require('../middleware/auth');
 
 // @desc    Get current store
 exports.getStore = asyncHandler(async (req, res) => {
@@ -28,5 +29,21 @@ exports.updateSettings = asyncHandler(async (req, res) => {
   const current = store.settings ? (typeof store.settings.toObject === 'function' ? store.settings.toObject() : store.settings) : {};
   store.settings = { ...current, ...req.body };
   await store.save();
+  invalidateStoreCache(store._id);
   res.json({ success: true, data: store.settings });
+});
+
+// @desc    Upload / replace store logo. Returns the public URL the frontend
+//          should use (relative to /uploads, served by express + nginx).
+exports.uploadStoreLogo = asyncHandler(async (req, res) => {
+  if (!req.file) return res.status(400).json({ success: false, message: 'No logo file provided' });
+
+  const url = `/uploads/logos/${req.file.filename}`;
+  const store = await Store.findByIdAndUpdate(
+    req.user.storeId,
+    { logo: url },
+    { new: true }
+  );
+  invalidateStoreCache(store._id);
+  res.json({ success: true, data: { logo: url } });
 });
