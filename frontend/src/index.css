@@ -10,58 +10,46 @@
     @apply font-heading;
   }
 
-  /* ─── Dark mode — site-wide overrides ─────────────────────────────────── */
-  /* Tailwind's `darkMode: 'class'` flips the .dark class on <html>; these
-     rules then re-skin every common surface so the whole app stays coherent
-     in dark mode without us having to sprinkle `dark:` classes on every JSX
-     node. */
-  .dark body                    { @apply bg-gray-900 text-gray-100; }
-  .dark main                    { @apply bg-gray-900; }
-  .dark header                  { @apply bg-gray-800 border-gray-800; }
+  /* ─── Dark mode — site-wide overrides ─────────────────────────────────────
+     We avoid `.dark .text-gray-XXX { ... }` style rules entirely because
+     re-defining a Tailwind utility class confuses @apply elsewhere in the
+     file (creates circular-dependency build errors). Instead we:
+       1. Re-skin element selectors (body, header, main, table, tbody, tr).
+       2. Re-skin our own custom @layer components classes (.card,
+          .input-field, .label, .table-header, .btn-secondary, ...).
+     Anywhere a specific node still needs lighter/darker text, add a
+     `dark:text-xxx` variant directly in JSX. */
 
-  .dark .card                   { @apply bg-gray-800 border-gray-700 text-gray-100; }
-  .dark .stat-card              { @apply bg-gray-800 border-gray-700; }
+  .dark body                    { background-color: theme('colors.gray.900'); color: theme('colors.gray.100'); }
+  .dark main                    { background-color: theme('colors.gray.900'); }
+  .dark header                  { background-color: theme('colors.gray.800'); border-color: theme('colors.gray.800'); }
 
-  .dark .input-field            { @apply bg-gray-900 border-gray-700 text-gray-100 placeholder-gray-500; }
-  .dark .input-field:focus      { @apply border-primary-500 ring-primary-500/40; }
-  .dark .label                  { @apply text-gray-400; }
+  .dark .card                   { background-color: theme('colors.gray.800'); border-color: theme('colors.gray.700'); color: theme('colors.gray.100'); }
+  .dark .stat-card              { background-color: theme('colors.gray.800'); border-color: theme('colors.gray.700'); }
 
-  .dark .table-header           { @apply bg-gray-800/60 text-gray-400; }
-  .dark table                   { @apply text-gray-200; }
-  .dark tbody tr                { @apply border-gray-700; }
-  .dark tbody tr:hover          { @apply bg-gray-800/60; }
-  .dark .divide-y > *           { border-color: rgb(55 65 81); }
+  .dark .input-field            { background-color: theme('colors.gray.900'); border-color: theme('colors.gray.700'); color: theme('colors.gray.100'); }
+  .dark .input-field::placeholder { color: theme('colors.gray.500'); }
+  .dark .input-field:focus      { border-color: theme('colors.primary.500'); box-shadow: 0 0 0 3px rgb(16 185 129 / 0.4); }
 
-  .dark .btn-secondary          { @apply bg-gray-800 text-gray-200 border-gray-700 hover:bg-gray-700; }
-  .dark .btn-ghost              { @apply text-gray-300 hover:bg-gray-800; }
+  .dark .label                  { color: theme('colors.gray.400'); }
 
-  .dark .badge-gray             { @apply bg-gray-700 text-gray-300; }
+  .dark .table-header           { background-color: rgb(31 41 55 / 0.6); color: theme('colors.gray.400'); }
+  .dark table                   { color: theme('colors.gray.200'); }
+  .dark tbody tr                { border-color: theme('colors.gray.700'); }
+  .dark tbody tr:hover          { background-color: rgb(31 41 55 / 0.6); }
+
+  .dark .btn-secondary          { background-color: theme('colors.gray.800'); color: theme('colors.gray.200'); border-color: theme('colors.gray.700'); }
+  .dark .btn-secondary:hover    { background-color: theme('colors.gray.700'); }
+  .dark .btn-ghost              { color: theme('colors.gray.300'); }
+  .dark .btn-ghost:hover        { background-color: theme('colors.gray.800'); }
+
+  .dark .badge-gray             { background-color: theme('colors.gray.700'); color: theme('colors.gray.300'); }
 
   /* Headings inside dark surfaces — keep them readable. */
   .dark h1, .dark h2, .dark h3, .dark h4, .dark h5, .dark h6 { color: theme('colors.gray.100'); }
 
-  /* Re-skin gray text utilities under .dark.  We use raw `color:` (via Tailwind's
-     theme() helper) here instead of `@apply text-gray-XXX` because @apply'ing
-     one utility from inside its own family creates a circular dependency that
-     PostCSS refuses to compile. */
-  .dark .text-gray-900 { color: theme('colors.gray.100'); }
-  .dark .text-gray-800 { color: theme('colors.gray.200'); }
-  .dark .text-gray-700 { color: theme('colors.gray.300'); }
-  .dark .text-gray-600 { color: theme('colors.gray.400'); }
-  .dark .text-gray-500 { color: theme('colors.gray.400'); }
-  .dark .text-gray-400 { color: theme('colors.gray.500'); }
-
-  .dark .bg-white      { background-color: theme('colors.gray.800'); }
-  .dark .bg-gray-50    { background-color: rgb(31 41 55 / 0.4); }
-  .dark .bg-gray-100   { background-color: rgb(31 41 55 / 0.7); }
-
-  .dark .border-gray-100   { border-color: theme('colors.gray.700'); }
-  .dark .border-gray-200   { border-color: theme('colors.gray.700'); }
-  .dark .divide-gray-50 > :not([hidden]) ~ :not([hidden]) { border-color: theme('colors.gray.700'); }
-
-  /* Sidebar already uses an emerald gradient — keep it as-is in both modes,
-     it reads fine on dark. Just darken the hover slightly. */
-  .dark .sidebar-link:hover     { @apply bg-white/5; }
+  /* Sidebar uses an emerald gradient — keep as-is, just soften the hover. */
+  .dark .sidebar-link:hover     { background-color: rgb(255 255 255 / 0.05); }
 }
 
 @layer components {
