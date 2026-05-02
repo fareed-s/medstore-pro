@@ -2,13 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import API from '../../utils/api';
 import { formatDate, apiError } from '../../utils/helpers';
 import { toast } from 'react-toastify';
-import { confirm, confirmDanger } from '../../utils/swal';
+import Swal, { confirm, confirmDanger } from '../../utils/swal';
 import { copyToClipboard } from '../../utils/clipboard';
 import {
   HiOutlineOfficeBuilding, HiOutlineCheck, HiOutlineBan, HiOutlineSearch,
   HiOutlineEye, HiOutlinePlus, HiOutlineX, HiOutlineClipboardCopy,
   HiOutlineRefresh, HiOutlinePencilAlt, HiOutlineSparkles, HiOutlineUpload,
-  HiOutlineKey,
+  HiOutlineKey, HiOutlineTrash,
 } from 'react-icons/hi';
 
 const PLANS = ['Trial', 'Monthly', '6-Month', 'Yearly'];
@@ -107,6 +107,42 @@ export default function AdminStoresPage() {
   const reactivate = async (id) => {
     try { await API.put(`/superadmin/stores/${id}/reactivate`); toast.success('Store reactivated'); fetchStores(); }
     catch (err) { toast.error(apiError(err)); }
+  };
+  // Destructive: wipes the store + every doc scoped to it (medicines, batches,
+  // sales, customers, suppliers, users, ...). Requires the SuperAdmin to type
+  // the store name to avoid mis-clicks; backend additionally requires
+  // ?confirm=DELETE in the URL.
+  const removeStore = async (store) => {
+    const { value: typed } = await Swal.fire({
+      icon: 'warning',
+      title: `Delete "${store.storeName}"?`,
+      html: `<p class="text-sm text-gray-600 mb-3">This permanently deletes the store and <b>all</b> related data — medicines, batches, sales, customers, suppliers, users, activity logs. This cannot be undone.</p>
+             <p class="text-xs text-gray-500">Type <b>${store.storeName}</b> below to confirm:</p>`,
+      input: 'text',
+      inputPlaceholder: store.storeName,
+      showCancelButton: true,
+      confirmButtonText: 'Delete forever',
+      confirmButtonColor: '#dc2626',
+      cancelButtonColor: '#e5e7eb',
+      reverseButtons: true,
+      focusCancel: true,
+      preConfirm: (val) => {
+        if (val !== store.storeName) {
+          Swal.showValidationMessage('Name does not match — nothing was deleted.');
+          return false;
+        }
+        return val;
+      },
+    });
+    if (!typed) return;
+
+    try {
+      const { data } = await API.delete(`/superadmin/stores/${store._id}?confirm=DELETE`);
+      toast.success(data.message || 'Store deleted');
+      fetchStores();
+    } catch (err) {
+      toast.error(apiError(err, 'Delete failed'));
+    }
   };
   const openReset = (store) => { setResetFor(store); setResetPwd(generatePassword(10)); };
   const submitReset = async (e) => {
@@ -339,6 +375,7 @@ export default function AdminStoresPage() {
                   onEditPlan={() => openEditPlan(s)}
                   onToggleCatalog={() => setCatalog(s, !s.hasMasterCatalog)}
                   onResetPassword={() => openReset(s)}
+                  onDelete={() => removeStore(s)}
                 />
               ))}
               {!filtered.length && (
@@ -631,7 +668,7 @@ function PlanFields({ form, set, previewExpiry }) {
 
 // ─── StoreRow — table row with status + actions ─────────────────────────────
 
-function StoreRow({ s, onView, onApprove, onSuspend, onReactivate, onEditPlan, onToggleCatalog, onResetPassword }) {
+function StoreRow({ s, onView, onApprove, onSuspend, onReactivate, onEditPlan, onToggleCatalog, onResetPassword, onDelete }) {
   const expired = s.planEndDate && new Date(s.planEndDate) < new Date();
   const initial = (s.adminName || s.storeName || '?').charAt(0).toUpperCase();
   return (
@@ -708,6 +745,12 @@ function StoreRow({ s, onView, onApprove, onSuspend, onReactivate, onEditPlan, o
           )}
           <button onClick={onView} title="Details" className="p-1.5 rounded hover:bg-gray-100 text-gray-400">
             <HiOutlineEye className="w-4 h-4" />
+          </button>
+          <button
+            onClick={onDelete}
+            title="Delete store and all its data"
+            className="p-1.5 rounded hover:bg-red-50 text-red-500">
+            <HiOutlineTrash className="w-4 h-4" />
           </button>
         </div>
       </td>

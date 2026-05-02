@@ -13,6 +13,7 @@ router.put('/stores/:id/reactivate', ctrl.reactivateStore);
 router.put('/stores/:id/plan', ctrl.updatePlan);
 router.put('/stores/:id/catalog', ctrl.setStoreCatalog);
 router.put('/stores/:id/admin-password', ctrl.resetStoreAdminPassword);
+router.delete('/stores/:id', ctrl.deleteStore);
 router.post('/medicines/bulk-master', ctrl.bulkMasterMedicines);
 router.get('/medicines/master/stats', ctrl.getMasterStats);
 router.get('/users', ctrl.getUsers);

@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Store = require('../models/Store');
 const User = require('../models/User');
 const Medicine = require('../models/Medicine');
@@ -323,6 +324,73 @@ exports.reactivateStore = asyncHandler(async (req, res) => {
   await store.save();
   invalidateStoreCache(store._id);
   res.json({ success: true, data: store });
+});
+
+// @desc    Permanently delete a store and ALL its data (users, medicines,
+//          batches, sales, customers, suppliers, ...). Cascades by enumerating
+//          every collection in the DB and deleting docs whose `storeId` matches.
+//          Requires `?confirm=DELETE` in the query string as an accidental-
+//          deletion guard. Cannot be undone — backups are the only recovery.
+exports.deleteStore = asyncHandler(async (req, res) => {
+  if (req.query.confirm !== 'DELETE') {
+    return res.status(400).json({
+      success: false,
+      message: 'Confirmation required. Pass ?confirm=DELETE to proceed.',
+    });
+  }
+
+  const store = await Store.findById(req.params.id);
+  if (!store) return res.status(404).json({ success: false, message: 'Store not found' });
+
+  // Capture identifying info BEFORE deletion so the audit log is meaningful.
+  const snapshot = {
+    _id: store._id,
+    storeName: store.storeName,
+    slug: store.slug,
+    email: store.email,
+    plan: store.plan,
+  };
+
+  // Cascade delete: walk every collection and delete docs scoped to this
+  // store. Collections that don't have a `storeId` field will simply match
+  // zero docs. Stores collection itself is skipped here and dropped last.
+  const db = mongoose.connection.db;
+  const collections = await db.listCollections().toArray();
+  const cascadeCounts = {};
+
+  for (const col of collections) {
+    if (col.name === 'stores') continue;
+    try {
+      const r = await db.collection(col.name).deleteMany({ storeId: store._id });
+      if (r.deletedCount > 0) cascadeCounts[col.name] = r.deletedCount;
+    } catch (err) {
+      console.error(`[deleteStore] failed to clean ${col.name}:`, err.message);
+    }
+  }
+
+  // Now delete the store doc itself.
+  await Store.deleteOne({ _id: store._id });
+  invalidateStoreCache(store._id);
+
+  // Audit log — write AFTER deletion (with null storeId so it isn't deleted
+  // by the cascade) so we have a permanent record of who deleted what.
+  await ActivityLog.create({
+    storeId: null,
+    userId: req.user._id,
+    action: 'Store deleted',
+    module: 'store',
+    details: `Deleted store "${snapshot.storeName}" (${snapshot.email}). Cascade: ${
+      JSON.stringify(cascadeCounts)
+    }`,
+    entityId: snapshot._id,
+    entityType: 'Store',
+  }).catch(() => {});
+
+  res.json({
+    success: true,
+    message: `Store "${snapshot.storeName}" and all related data permanently deleted.`,
+    data: { snapshot, cascadeCounts },
+  });
 });
 
 // @desc    List all users across all stores
