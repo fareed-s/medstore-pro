@@ -241,8 +241,8 @@ export default function POSTerminal() {
         <span className="text-white/50 text-xs hidden md:block">F2 Search · F5 Hold · F10 Complete</span>
         <span className="text-white/80 text-sm font-medium">{user?.name}</span>
       </div>
-      <div className="flex-1 flex overflow-hidden">
-        <div className="flex-[60] flex flex-col border-r border-gray-200 bg-white">
+      <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
+        <div className="w-full lg:flex-[60] flex flex-col lg:border-r border-gray-200 bg-white">
           <div className="p-3 border-b border-gray-100">
             <div className="relative">
               <HiOutlineSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"/>
@@ -252,7 +252,7 @@ export default function POSTerminal() {
                 value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} onKeyDown={handleSearchKey}/>
             </div>
             {searchResults.length>0&&(
-              <div className="absolute z-20 left-3 right-[40%] mt-1 bg-white rounded-xl shadow-2xl border max-h-72 overflow-y-auto">
+              <div className="absolute z-20 left-3 right-3 lg:right-[40%] mt-1 bg-white rounded-xl shadow-2xl border max-h-72 overflow-y-auto">
                 {searchResults.map(m=>(
                   <button key={m._id} onClick={()=>addToCart(m)}
                     className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-primary-50 text-left border-b border-gray-50 last:border-0">
@@ -269,7 +269,8 @@ export default function POSTerminal() {
               </div>
             )}
           </div>
-          <div className="flex gap-1.5 px-3 py-2 border-b border-gray-100 overflow-x-auto flex-shrink-0">
+          {/* Category tabs + tile grid: hidden on mobile (search is the only flow there) */}
+          <div className="hidden lg:flex gap-1.5 px-3 py-2 border-b border-gray-100 overflow-x-auto flex-shrink-0">
             {CAT_TABS.map(c=>(
               <button key={c} onClick={()=>{setSelectedCat(c);setTilesPage(1);}}
                 className={`px-3.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition
@@ -278,7 +279,7 @@ export default function POSTerminal() {
               </button>
             ))}
           </div>
-          <div className="flex-1 overflow-y-auto p-3">
+          <div className="hidden lg:block flex-1 overflow-y-auto p-3">
             {tilesLoading?<div className="flex justify-center py-10"><div className="w-7 h-7 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin"/></div>:
             tiles.length===0?<div className="text-center py-10 text-gray-400 text-sm">No medicines</div>:
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-2.5">
@@ -315,7 +316,7 @@ export default function POSTerminal() {
             </div>
           </div>
           {cart.length>0&&(
-            <div className="border-t-2 border-primary-100 max-h-[38%] overflow-y-auto flex-shrink-0 bg-white">
+            <div className="border-t-2 border-primary-100 lg:max-h-[38%] lg:overflow-y-auto flex-shrink-0 bg-white">
               <div className="px-3 py-2 bg-primary-50/60 flex items-center justify-between sticky top-0 z-10 border-b border-primary-100">
                 <span className="text-sm font-semibold text-gray-700">🛒 {cart.length} items in cart</span>
                 <button onClick={clearCart} className="text-xs font-medium text-red-500 hover:text-red-700">Clear all</button>
@@ -325,8 +326,8 @@ export default function POSTerminal() {
                   <tr className="text-left text-[11px] text-gray-500 uppercase tracking-wider">
                     <th className="px-3 py-2">Item</th>
                     <th className="px-2 py-2 w-28 text-center">Qty</th>
-                    <th className="px-2 py-2 w-24 text-right">Price</th>
-                    <th className="px-2 py-2 w-20 text-right">Disc</th>
+                    <th className="px-2 py-2 w-24 text-right hidden sm:table-cell">Price</th>
+                    <th className="px-2 py-2 w-20 text-right hidden md:table-cell">Disc</th>
                     <th className="px-2 py-2 w-24 text-right">Total</th>
                     <th className="w-8"></th>
                   </tr>
@@ -337,6 +338,8 @@ export default function POSTerminal() {
                       <td className="px-3 py-2">
                         <p className="font-medium text-gray-900">{i.medicineName}</p>
                         {i.genericName&&<p className="text-[11px] text-gray-400">{i.genericName}</p>}
+                        {/* On mobile, show price inline since the Price column is hidden */}
+                        <p className="text-[11px] text-gray-500 sm:hidden">{formatCurrency(i.unitPrice)} × {i.quantity}</p>
                       </td>
                       <td className="px-2 py-2">
                         <div className="flex items-center justify-center gap-1">
@@ -351,8 +354,8 @@ export default function POSTerminal() {
                           </button>
                         </div>
                       </td>
-                      <td className="px-2 py-2 text-right text-gray-700">{formatCurrency(i.unitPrice)}</td>
-                      <td className="px-2 py-2 text-right">
+                      <td className="px-2 py-2 text-right text-gray-700 hidden sm:table-cell">{formatCurrency(i.unitPrice)}</td>
+                      <td className="px-2 py-2 text-right hidden md:table-cell">
                         <input type="number" min="0" value={i.discount||''} placeholder="0"
                           onChange={e=>updateDisc(i.medicineId,e.target.value)}
                           className="w-16 text-right border rounded-md px-1.5 py-1 text-sm"/>
@@ -370,7 +373,7 @@ export default function POSTerminal() {
             </div>
           )}
         </div>
-        <div className="flex-[40] flex flex-col bg-gray-50 overflow-y-auto">
+        <div className="w-full lg:flex-[40] flex flex-col bg-gray-50 lg:overflow-y-auto">
           <div className="p-3 bg-white border-b">
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Customer</label>
@@ -459,7 +462,7 @@ export default function POSTerminal() {
               </p>
             )}
           </div>
-          <div className="p-3 space-y-2 mt-auto">
+          <div className="p-3 space-y-2 lg:mt-auto">
             {heldBills.length>0&&(
               <button onClick={()=>setShowHeld(true)} className="w-full py-2 rounded-xl border-2 border-amber-300 bg-amber-50 text-amber-700 font-medium text-sm flex items-center justify-center gap-2">
                 <HiOutlinePlay className="w-4 h-4"/>Resume ({heldBills.length})
