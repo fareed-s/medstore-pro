@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { login, getMe, logout, updatePassword, updateProfile, uploadAvatar } = require('../controllers/auth.controller');
+const { login, getMe, logout, updatePassword, updateProfile, uploadAvatar, deleteAvatar } = require('../controllers/auth.controller');
 const { protect } = require('../middleware/auth');
 const { validate, loginSchema } = require('../middleware/validate');
 const { uploadAvatar: uploadAvatarMiddleware } = require('../middleware/upload');
@@ -15,5 +15,6 @@ router.post('/logout', protect, logout);
 router.put('/password', protect, updatePassword);
 router.put('/profile', protect, updateProfile);
 router.post('/avatar', protect, uploadAvatarMiddleware, uploadAvatar);
+router.delete('/avatar', protect, deleteAvatar);
 
 module.exports = router;

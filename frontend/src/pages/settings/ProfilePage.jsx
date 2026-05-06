@@ -1,12 +1,22 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import API from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
 import { ROLE_LABELS, apiError } from '../../utils/helpers';
+import { confirmDanger } from '../../utils/swal';
 import { toast } from 'react-toastify';
 import {
   HiOutlineUser, HiOutlineUpload, HiOutlineKey, HiOutlineMail, HiOutlinePhone,
-  HiOutlineCheck,
+  HiOutlineCheck, HiOutlineTrash,
 } from 'react-icons/hi';
+
+// Append a cache-buster to the avatar URL so the browser doesn't show a stale
+// cached image after upload / replace. Skips blob: URLs (used for the optimistic
+// preview right after picking a file) since those are unique already.
+function withBust(url) {
+  if (!url || url.startsWith('blob:')) return url || null;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}t=${Date.now()}`;
+}
 
 export default function ProfilePage() {
   const { user, checkAuth } = useAuth();
@@ -19,7 +29,18 @@ export default function ProfilePage() {
   // Avatar
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState(user?.avatar || null);
+
+  // Sync local state when the user object loads / changes (e.g. /auth/me
+  // resolves AFTER the page mounted, or another tab updated the profile).
+  // Without this, the initial `useState(user?.avatar)` snapshot stays null
+  // and the avatar never appears even though the DB has it.
+  useEffect(() => {
+    setAvatarPreview(user?.avatar || null);
+    if (user?.name)  setName((n) => n || user.name);
+    if (user?.phone) setPhone((p) => p || user.phone);
+  }, [user?.avatar, user?.name, user?.phone]);
 
   // Password change
   const [currentPwd, setCurrentPwd] = useState('');
@@ -65,6 +86,22 @@ export default function ProfilePage() {
     }
   };
 
+  const removeAvatar = async () => {
+    if (!avatarPreview) return;
+    if (!(await confirmDanger('Your profile photo will be removed.', { title: 'Remove avatar?', confirmText: 'Remove' }))) return;
+    setRemoving(true);
+    try {
+      await API.delete('/auth/avatar');
+      setAvatarPreview(null);
+      await checkAuth();
+      toast.success('Avatar removed');
+    } catch (err) {
+      toast.error(apiError(err, 'Failed to remove avatar'));
+    } finally {
+      setRemoving(false);
+    }
+  };
+
   const changePassword = async (e) => {
     e.preventDefault();
     if (newPwd.length < 6) { toast.error('New password must be at least 6 characters'); return; }
@@ -95,13 +132,18 @@ export default function ProfilePage() {
         <div className="flex flex-col sm:flex-row sm:items-center gap-5">
           <div className="relative flex-shrink-0">
             {avatarPreview ? (
-              <img src={avatarPreview} alt="" className="w-24 h-24 rounded-full object-cover border-2 border-primary-100" />
+              <img
+                src={withBust(avatarPreview)}
+                alt=""
+                className="w-24 h-24 rounded-full object-cover border-2 border-primary-100"
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              />
             ) : (
               <div className="w-24 h-24 rounded-full bg-primary-100 text-primary-700 font-bold text-3xl flex items-center justify-center border-2 border-primary-100">
                 {initial}
               </div>
             )}
-            {uploading && (
+            {(uploading || removing) && (
               <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center">
                 <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
               </div>
@@ -111,13 +153,22 @@ export default function ProfilePage() {
             <p className="font-heading font-bold text-lg text-gray-900 truncate">{user?.name}</p>
             <p className="text-sm text-gray-500 truncate flex items-center gap-1.5"><HiOutlineMail className="w-4 h-4" />{user?.email}</p>
             <p className="text-xs text-primary-600 mt-0.5">{ROLE_LABELS[user?.role] || user?.role}</p>
-            <div className="mt-3 flex gap-2">
+            <div className="mt-3 flex flex-wrap gap-2">
               <button
                 onClick={() => fileRef.current?.click()}
-                disabled={uploading}
+                disabled={uploading || removing}
                 className="btn-secondary flex items-center gap-1.5 text-sm">
-                <HiOutlineUpload className="w-4 h-4" /> {uploading ? 'Uploading…' : 'Change Photo'}
+                <HiOutlineUpload className="w-4 h-4" /> {uploading ? 'Uploading…' : (avatarPreview ? 'Change Photo' : 'Upload Photo')}
               </button>
+              {avatarPreview && (
+                <button
+                  type="button"
+                  onClick={removeAvatar}
+                  disabled={uploading || removing}
+                  className="px-3 py-2 rounded-xl border border-red-200 text-red-600 text-sm font-medium hover:bg-red-50 flex items-center gap-1.5 disabled:opacity-50">
+                  <HiOutlineTrash className="w-4 h-4" /> {removing ? 'Removing…' : 'Remove'}
+                </button>
+              )}
               <input
                 ref={fileRef}
                 type="file"

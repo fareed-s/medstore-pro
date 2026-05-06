@@ -1,3 +1,5 @@
+const path = require('path');
+const fs = require('fs');
 const User = require('../models/User');
 const Store = require('../models/Store');
 const ActivityLog = require('../models/ActivityLog');
@@ -257,6 +259,14 @@ exports.updateProfile = asyncHandler(async (req, res) => {
 // @route   POST /api/auth/avatar
 exports.uploadAvatar = asyncHandler(async (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
+
+  // Best-effort cleanup of the previous avatar so old files don't pile up on disk.
+  const prev = await User.findById(req.user._id).select('avatar').lean();
+  if (prev?.avatar?.startsWith('/uploads/avatars/')) {
+    const prevPath = path.join(__dirname, '..', prev.avatar);
+    fs.promises.unlink(prevPath).catch(() => {});  // ignore if missing
+  }
+
   const url = `/uploads/avatars/${req.file.filename}`;
   const user = await User.findByIdAndUpdate(
     req.user._id,
@@ -265,4 +275,23 @@ exports.uploadAvatar = asyncHandler(async (req, res) => {
   ).select('-password');
   if (user) invalidateUserCache(user._id);
   res.json({ success: true, avatar: url, user });
+});
+
+// @desc    Remove the current user's avatar — clears the DB field and unlinks
+//          the file on disk (best-effort). Idempotent: returns success even
+//          if no avatar was set.
+// @route   DELETE /api/auth/avatar
+exports.deleteAvatar = asyncHandler(async (req, res) => {
+  const prev = await User.findById(req.user._id).select('avatar').lean();
+  if (prev?.avatar?.startsWith('/uploads/avatars/')) {
+    const prevPath = path.join(__dirname, '..', prev.avatar);
+    fs.promises.unlink(prevPath).catch(() => {});
+  }
+  const user = await User.findByIdAndUpdate(
+    req.user._id,
+    { $unset: { avatar: '' } },
+    { new: true }
+  ).select('-password');
+  if (user) invalidateUserCache(user._id);
+  res.json({ success: true, user });
 });
