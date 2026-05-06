@@ -5,8 +5,8 @@ import { ROLE_LABELS, apiError } from '../../utils/helpers';
 import { confirmDanger } from '../../utils/swal';
 import { toast } from 'react-toastify';
 import {
-  HiOutlineUser, HiOutlineUpload, HiOutlineKey, HiOutlineMail, HiOutlinePhone,
-  HiOutlineCheck, HiOutlineTrash,
+  HiOutlineUser, HiOutlineKey, HiOutlineMail, HiOutlinePhone,
+  HiOutlineCheck, HiOutlineTrash, HiOutlinePencil,
 } from 'react-icons/hi';
 
 // Append a cache-buster to the avatar URL so the browser doesn't show a stale
@@ -130,7 +130,7 @@ export default function ProfilePage() {
       {/* Avatar + identity */}
       <div className="card mb-4">
         <div className="flex flex-col sm:flex-row sm:items-center gap-5">
-          <div className="relative flex-shrink-0">
+          <div className="relative flex-shrink-0 w-24 h-24">
             {avatarPreview ? (
               <img
                 src={withBust(avatarPreview)}
@@ -143,41 +143,52 @@ export default function ProfilePage() {
                 {initial}
               </div>
             )}
+
+            {/* Floating edit (pencil) — bottom-right of the avatar */}
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading || removing}
+              title={avatarPreview ? 'Change photo' : 'Upload photo'}
+              aria-label={avatarPreview ? 'Change photo' : 'Upload photo'}
+              className="absolute -bottom-1 -right-1 w-9 h-9 bg-white rounded-full shadow-md border border-gray-200 flex items-center justify-center hover:bg-gray-50 disabled:opacity-50">
+              <HiOutlinePencil className="w-4 h-4 text-gray-600" />
+            </button>
+
+            {/* Floating delete (trash) — top-right, only if an avatar is set */}
+            {avatarPreview && (
+              <button
+                type="button"
+                onClick={removeAvatar}
+                disabled={uploading || removing}
+                title="Remove photo"
+                aria-label="Remove photo"
+                className="absolute -top-1 -right-1 w-8 h-8 bg-white rounded-full shadow-md border border-red-200 flex items-center justify-center text-red-600 hover:bg-red-50 disabled:opacity-50">
+                <HiOutlineTrash className="w-4 h-4" />
+              </button>
+            )}
+
             {(uploading || removing) && (
               <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center">
                 <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
               </div>
             )}
+
+            {/* Hidden file input — opened by the pencil button */}
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              className="hidden"
+              onChange={(e) => onAvatarPick(e.target.files?.[0])}
+            />
           </div>
+
           <div className="flex-1 min-w-0">
             <p className="font-heading font-bold text-lg text-gray-900 truncate">{user?.name}</p>
             <p className="text-sm text-gray-500 truncate flex items-center gap-1.5"><HiOutlineMail className="w-4 h-4" />{user?.email}</p>
             <p className="text-xs text-primary-600 mt-0.5">{ROLE_LABELS[user?.role] || user?.role}</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                onClick={() => fileRef.current?.click()}
-                disabled={uploading || removing}
-                className="btn-secondary flex items-center gap-1.5 text-sm">
-                <HiOutlineUpload className="w-4 h-4" /> {uploading ? 'Uploading…' : (avatarPreview ? 'Change Photo' : 'Upload Photo')}
-              </button>
-              {avatarPreview && (
-                <button
-                  type="button"
-                  onClick={removeAvatar}
-                  disabled={uploading || removing}
-                  className="px-3 py-2 rounded-xl border border-red-200 text-red-600 text-sm font-medium hover:bg-red-50 flex items-center gap-1.5 disabled:opacity-50">
-                  <HiOutlineTrash className="w-4 h-4" /> {removing ? 'Removing…' : 'Remove'}
-                </button>
-              )}
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif"
-                className="hidden"
-                onChange={(e) => onAvatarPick(e.target.files?.[0])}
-              />
-            </div>
-            <p className="text-[11px] text-gray-400 mt-1">JPG, PNG, WEBP or GIF · max 2 MB</p>
+            <p className="text-[11px] text-gray-400 mt-2">JPG, PNG, WEBP or GIF · max 2 MB</p>
           </div>
         </div>
       </div>
