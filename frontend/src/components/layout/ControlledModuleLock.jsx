@@ -32,8 +32,8 @@ export default function ControlledModuleLock() {
     <>
       <button
         onClick={handleClick}
-        title={unlocked ? 'Open controlled drugs' : 'Unlock controlled drugs'}
-        aria-label="Controlled drugs"
+        title="Administrator portal"
+        aria-label="Administrator portal"
         className={`btn-ghost p-2 relative ${unlocked ? 'text-emerald-600' : 'text-gray-500'}`}
       >
         <HiOutlineLockClosed className="w-5 h-5" />
@@ -95,8 +95,8 @@ function UnlockModal({ onClose, onUnlock }) {
             <HiOutlineLockClosed className="w-5 h-5 text-white" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="font-heading font-bold text-white">Secure Access</h3>
-            <p className="text-xs text-gray-300">Restricted area</p>
+            <h3 className="font-heading font-bold text-white">Administrator Portal</h3>
+            <p className="text-xs text-gray-300">System tools · Admin only</p>
           </div>
           <button onClick={onClose} className="text-white/60 hover:text-white p-1">
             <HiOutlineX className="w-5 h-5" />
@@ -105,13 +105,13 @@ function UnlockModal({ onClose, onUnlock }) {
 
         <form onSubmit={submit} className="p-5 space-y-4">
           <div>
-            <label className="label">Access Code</label>
+            <label className="label">Admin Code</label>
             <input
               ref={inputRef}
               type="password"
               autoComplete="off"
               className="input-field"
-              placeholder="Enter your access code"
+              placeholder="Enter admin code"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={busy}
@@ -119,7 +119,7 @@ function UnlockModal({ onClose, onUnlock }) {
             />
             {error && <p className="text-xs text-red-600 mt-1.5">{error}</p>}
             <p className="text-[11px] text-gray-400 mt-2">
-              If you do not know the code, please contact your administrator.
+              You cannot access this. Administrator portal — restricted to system administrators only.
             </p>
           </div>
           <div className="flex gap-2">
