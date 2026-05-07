@@ -3,10 +3,11 @@ import { Link } from 'react-router-dom';
 import { formatCurrency, formatDate } from '../../../utils/helpers';
 
 const DATE_COLOR = {
-  expired:  'text-red-600',
-  within30: 'text-red-600',
-  within60: 'text-amber-600',
-  within90: 'text-emerald-600',
+  expired:   'text-red-600',
+  within30:  'text-red-600',
+  within60:  'text-amber-600',
+  within90:  'text-emerald-600',
+  within180: 'text-blue-600',
 };
 
 function ExpiryRow({ batch: b, tab }) {

@@ -15,10 +15,11 @@ export default function ExpiryDashboard() {
   }, []);
 
   const tabs = useMemo(() => ([
-    { key: 'expired',  label: 'Expired',     color: 'red',   count: data?.expired?.count  || 0, value: data?.expired?.value  || 0 },
-    { key: 'within30', label: '0-30 Days',   color: 'red',   count: data?.within30?.count || 0, value: data?.within30?.value || 0 },
-    { key: 'within60', label: '31-60 Days',  color: 'amber', count: data?.within60?.count || 0, value: data?.within60?.value || 0 },
-    { key: 'within90', label: '61-90 Days',  color: 'green', count: data?.within90?.count || 0, value: data?.within90?.value || 0 },
+    { key: 'expired',   label: 'Expired',      color: 'red',   count: data?.expired?.count   || 0, value: data?.expired?.value   || 0 },
+    { key: 'within30',  label: '0-30 Days',    color: 'red',   count: data?.within30?.count  || 0, value: data?.within30?.value  || 0 },
+    { key: 'within60',  label: '31-60 Days',   color: 'amber', count: data?.within60?.count  || 0, value: data?.within60?.value  || 0 },
+    { key: 'within90',  label: '61-90 Days',   color: 'green', count: data?.within90?.count  || 0, value: data?.within90?.value  || 0 },
+    { key: 'within180', label: '91-180 Days',  color: 'blue',  count: data?.within180?.count || 0, value: data?.within180?.value || 0 },
   ]), [data]);
 
   const onSelectTab = useCallback((key) => setActiveTab(key), []);

@@ -109,7 +109,7 @@ exports.getExpiryDashboard = asyncHandler(async (req, res) => {
   const storeId = req.user.storeId;
   const now = new Date();
 
-  const [expired, within30, within60, within90] = await Promise.all([
+  const [expired, within30, within60, within90, within180] = await Promise.all([
     Batch.find({ storeId, expiryDate: { $lt: now }, remainingQty: { $gt: 0 } })
       .populate('medicineId', 'medicineName genericName salePrice')
       .sort({ expiryDate: 1 }),
@@ -122,6 +122,9 @@ exports.getExpiryDashboard = asyncHandler(async (req, res) => {
     Batch.find({ storeId, expiryDate: { $gte: addDays(now, 61), $lte: addDays(now, 90) }, remainingQty: { $gt: 0 } })
       .populate('medicineId', 'medicineName genericName salePrice')
       .sort({ expiryDate: 1 }),
+    Batch.find({ storeId, expiryDate: { $gte: addDays(now, 91), $lte: addDays(now, 180) }, remainingQty: { $gt: 0 } })
+      .populate('medicineId', 'medicineName genericName salePrice')
+      .sort({ expiryDate: 1 }),
   ]);
 
   // Calculate values
@@ -130,10 +133,11 @@ exports.getExpiryDashboard = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     data: {
-      expired: { count: expired.length, value: calcValue(expired), items: expired },
-      within30: { count: within30.length, value: calcValue(within30), items: within30 },
-      within60: { count: within60.length, value: calcValue(within60), items: within60 },
-      within90: { count: within90.length, value: calcValue(within90), items: within90 },
+      expired:   { count: expired.length,   value: calcValue(expired),   items: expired },
+      within30:  { count: within30.length,  value: calcValue(within30),  items: within30 },
+      within60:  { count: within60.length,  value: calcValue(within60),  items: within60 },
+      within90:  { count: within90.length,  value: calcValue(within90),  items: within90 },
+      within180: { count: within180.length, value: calcValue(within180), items: within180 },
     },
   });
 });

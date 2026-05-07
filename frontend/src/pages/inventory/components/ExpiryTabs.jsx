@@ -1,9 +1,9 @@
 import { memo, useCallback } from 'react';
 import { formatCurrency } from '../../../utils/helpers';
 
-const COLOR_DOT  = { red: 'bg-red-500', amber: 'bg-amber-500', green: 'bg-emerald-500' };
-const COLOR_BG   = { red: 'bg-red-50 border-red-200', amber: 'bg-amber-50 border-amber-200', green: 'bg-emerald-50 border-emerald-200' };
-const COLOR_TEXT = { red: 'text-red-700', amber: 'text-amber-700', green: 'text-emerald-700' };
+const COLOR_DOT  = { red: 'bg-red-500', amber: 'bg-amber-500', green: 'bg-emerald-500', blue: 'bg-blue-500' };
+const COLOR_BG   = { red: 'bg-red-50 border-red-200', amber: 'bg-amber-50 border-amber-200', green: 'bg-emerald-50 border-emerald-200', blue: 'bg-blue-50 border-blue-200' };
+const COLOR_TEXT = { red: 'text-red-700', amber: 'text-amber-700', green: 'text-emerald-700', blue: 'text-blue-700' };
 
 const ExpiryTab = memo(function ExpiryTab({ tab, active, onClick }) {
   const handle = useCallback(() => onClick(tab.key), [onClick, tab.key]);
@@ -22,7 +22,7 @@ const ExpiryTab = memo(function ExpiryTab({ tab, active, onClick }) {
 
 function ExpiryTabs({ tabs, activeKey, onSelect }) {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
       {tabs.map((t) => <ExpiryTab key={t.key} tab={t} active={activeKey === t.key} onClick={onSelect} />)}
     </div>
   );
