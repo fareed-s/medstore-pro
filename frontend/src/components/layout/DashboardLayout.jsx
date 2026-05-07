@@ -4,7 +4,6 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { ROLE_LABELS } from '../../utils/helpers';
 import SubscriptionBanner from '../SubscriptionBanner';
-import ControlledModuleLock from './ControlledModuleLock';
 import {
   HiOutlineViewGrid, HiOutlineCube, HiOutlineTag, HiOutlineArchive, HiOutlineClock,
   HiOutlineUsers, HiOutlineCog, HiOutlineLogout, HiOutlineMenu, HiOutlineBell,
@@ -142,7 +141,6 @@ export default function DashboardLayout() {
           <div className="flex-1 sm:hidden" />
 
           <div className="flex items-center gap-2 ml-auto">
-            <ControlledModuleLock />
             <ThemeToggle />
             <button onClick={() => navigate('/notifications')} className="btn-ghost p-2 relative" title="Notifications">
               <HiOutlineBell className="w-5 h-5" />

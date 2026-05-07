@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import API from '../../utils/api';
 import { formatCurrency } from '../../utils/helpers';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, Cell } from 'recharts';
+import ControlledModuleLock from '../../components/layout/ControlledModuleLock';
 
 export default function ProfitLossPage() {
   const [data, setData] = useState(null);
@@ -39,8 +40,16 @@ export default function ProfitLossPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-heading font-bold text-gray-900 mb-1">Profit & Loss</h1>
-      <p className="text-gray-500 text-sm mb-6">Financial performance overview</p>
+      {/* Header — page title left, secret admin-portal lock pinned to the
+          extreme right. Tucked in beside a financial heading so it reads as
+          a routine "admin link" rather than a hidden module entry point. */}
+      <div className="flex items-start justify-between gap-3 mb-6">
+        <div>
+          <h1 className="text-2xl font-heading font-bold text-gray-900 mb-1">Profit & Loss</h1>
+          <p className="text-gray-500 text-sm">Financial performance overview</p>
+        </div>
+        <ControlledModuleLock />
+      </div>
 
       {/* Date Filter */}
       <div className="flex gap-3 mb-6 items-end">
