@@ -5,6 +5,8 @@ const Medicine = require('../models/Medicine');
 const MasterMedicine = require('../models/MasterMedicine');
 const Category = require('../models/Category');
 const ActivityLog = require('../models/ActivityLog');
+const ControlledModuleSettings = require('../models/ControlledModuleSettings');
+const ControlledAccessLog = require('../models/ControlledAccessLog');
 const slugify = require('slugify');
 const { asyncHandler } = require('../utils/errorHandler');
 const { generateBarcode } = require('../utils/helpers');
@@ -757,5 +759,196 @@ exports.resetStoreAdminPassword = asyncHandler(async (req, res) => {
       adminName: admin.name,
       storeName: store.storeName,
     },
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Controlled / Narcotic Drugs — Hidden Module Administration
+// Only the SuperAdmin can enable/disable, set the unlock password, or manage
+// which users in a store may unlock it. Every change here is logged in
+// ControlledAccessLog (immutable) AND ActivityLog (regular audit feed).
+// ════════════════════════════════════════════════════════════════════════════
+
+// Helper — find or lazily create the settings doc for a store.
+const getOrCreateModuleSettings = async (storeId) => {
+  let s = await ControlledModuleSettings.findOne({ storeId }).select('+passwordHash');
+  if (!s) {
+    s = await ControlledModuleSettings.create({ storeId, enabled: false });
+    s = await ControlledModuleSettings.findById(s._id).select('+passwordHash');
+  }
+  return s;
+};
+
+const writeModuleAuditLog = (storeId, userId, event, reason, req) =>
+  ControlledAccessLog.create({
+    storeId,
+    userId,
+    userEmail: req.user?.email,
+    userName: req.user?.name,
+    event,
+    reason,
+    ipAddress: req.ip,
+    userAgent: req.get('User-Agent'),
+  }).catch((err) => console.error('[ControlledAccessLog] write failed:', err.message));
+
+// @desc    Read the controlled-module settings for a store. Includes the
+//          allowed-user list (populated) so the UI can render names.
+// @route   GET /api/superadmin/stores/:id/controlled-module
+exports.getControlledModule = asyncHandler(async (req, res) => {
+  const store = await Store.findById(req.params.id).select('_id storeName');
+  if (!store) return res.status(404).json({ success: false, message: 'Store not found' });
+
+  const settings = await getOrCreateModuleSettings(store._id);
+
+  // Pull all active users for this store so the SuperAdmin can pick allow-list members.
+  const users = await User.find({ storeId: store._id, isActive: true })
+    .select('_id name email role avatar')
+    .sort({ name: 1 })
+    .lean();
+
+  res.json({
+    success: true,
+    data: {
+      store: { _id: store._id, storeName: store.storeName },
+      enabled: settings.enabled,
+      hasPassword: !!settings.passwordHash,
+      passwordSetAt: settings.passwordSetAt,
+      inspectionMode: settings.inspectionMode,
+      inspectionModeAt: settings.inspectionModeAt,
+      allowedUserIds: settings.allowedUserIds.map(String),
+      lockedUntil: settings.lockedUntil,
+      failedAttempts: settings.failedAttempts,
+      users,
+    },
+  });
+});
+
+// @desc    Enable/disable + (optionally) set/reset password + toggle inspection.
+//          One endpoint that handles all SuperAdmin-controlled flags so the
+//          UI can save everything in a single round-trip.
+// @route   PUT /api/superadmin/stores/:id/controlled-module
+//          body: { enabled?, password?, inspectionMode? }
+exports.updateControlledModule = asyncHandler(async (req, res) => {
+  const store = await Store.findById(req.params.id);
+  if (!store) return res.status(404).json({ success: false, message: 'Store not found' });
+
+  const { enabled, password, inspectionMode } = req.body;
+  const settings = await getOrCreateModuleSettings(store._id);
+
+  const changes = [];
+
+  if (typeof enabled === 'boolean' && enabled !== settings.enabled) {
+    settings.enabled = enabled;
+    changes.push(enabled ? 'enabled' : 'disabled');
+    writeModuleAuditLog(store._id, req.user._id, enabled ? 'enabled' : 'disabled', null, req);
+  }
+
+  if (typeof inspectionMode === 'boolean' && inspectionMode !== settings.inspectionMode) {
+    settings.inspectionMode = inspectionMode;
+    settings.inspectionModeAt = inspectionMode ? new Date() : undefined;
+    changes.push(inspectionMode ? 'inspection-on' : 'inspection-off');
+    writeModuleAuditLog(store._id, req.user._id, inspectionMode ? 'inspection_on' : 'inspection_off', null, req);
+  }
+
+  if (typeof password === 'string' && password.length > 0) {
+    if (password.length < 6) {
+      return res.status(400).json({ success: false, message: 'Module password must be at least 6 characters' });
+    }
+    await settings.setPassword(password);
+    changes.push('password-set');
+    writeModuleAuditLog(store._id, req.user._id, 'password_set', null, req);
+  }
+
+  await settings.save();
+
+  await ActivityLog.create({
+    storeId: store._id,
+    userId: req.user._id,
+    action: 'Controlled module updated',
+    module: 'regulatory',
+    details: `Changes: ${changes.join(', ') || 'none'}`,
+    entityId: store._id,
+    entityType: 'Store',
+  }).catch(() => {});
+
+  res.json({
+    success: true,
+    data: {
+      enabled: settings.enabled,
+      hasPassword: !!settings.passwordHash,
+      passwordSetAt: settings.passwordSetAt,
+      inspectionMode: settings.inspectionMode,
+      changes,
+    },
+  });
+});
+
+// @desc    Set the allowed-user list for the module. Replaces the list
+//          wholesale (frontend always sends the full desired set).
+// @route   PUT /api/superadmin/stores/:id/controlled-module/users
+//          body: { userIds: [...] }
+exports.setControlledModuleUsers = asyncHandler(async (req, res) => {
+  const store = await Store.findById(req.params.id);
+  if (!store) return res.status(404).json({ success: false, message: 'Store not found' });
+
+  const { userIds } = req.body;
+  if (!Array.isArray(userIds)) {
+    return res.status(400).json({ success: false, message: 'userIds[] required' });
+  }
+
+  // Validate every id belongs to this store — defends against the SuperAdmin
+  // accidentally pasting an id from another tenant.
+  const valid = await User.find({
+    _id: { $in: userIds },
+    storeId: store._id,
+    isActive: true,
+  }).select('_id name email').lean();
+
+  const validIds = valid.map((u) => u._id);
+  const settings = await getOrCreateModuleSettings(store._id);
+  const before = new Set(settings.allowedUserIds.map(String));
+  const after = new Set(validIds.map(String));
+
+  // Diff so we can write a granular audit row per user.
+  for (const id of after) {
+    if (!before.has(id)) writeModuleAuditLog(store._id, req.user._id, 'user_allowed', `user ${id}`, req);
+  }
+  for (const id of before) {
+    if (!after.has(id)) writeModuleAuditLog(store._id, req.user._id, 'user_revoked', `user ${id}`, req);
+  }
+
+  settings.allowedUserIds = validIds;
+  await settings.save();
+
+  res.json({
+    success: true,
+    data: {
+      allowedUserIds: settings.allowedUserIds.map(String),
+      added: [...after].filter((id) => !before.has(id)).length,
+      removed: [...before].filter((id) => !after.has(id)).length,
+    },
+  });
+});
+
+// @desc    Read access logs for a store (paginated, newest first).
+// @route   GET /api/superadmin/stores/:id/controlled-module/logs?page=1&limit=50
+exports.getControlledModuleLogs = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 50, event } = req.query;
+  const filter = { storeId: req.params.id };
+  if (event) filter.event = event;
+
+  const [total, logs] = await Promise.all([
+    ControlledAccessLog.countDocuments(filter),
+    ControlledAccessLog.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(parseInt(limit))
+      .lean(),
+  ]);
+
+  res.json({
+    success: true,
+    data: logs,
+    pagination: { total, page: parseInt(page), limit: parseInt(limit) },
   });
 });

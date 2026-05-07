@@ -49,6 +49,16 @@ import StockTransferPage from './pages/transfers/StockTransferPage';
 import AdminStoresPage from './pages/admin/AdminStoresPage';
 import MasterCatalogPage from './pages/admin/MasterCatalogPage';
 import QuickStockInPage from './pages/inventory/QuickStockInPage';
+import SecureLayout from './components/layout/SecureLayout';
+import VaultDashboard from './pages/secure/VaultDashboard';
+import ControlledMedicinesPage from './pages/secure/ControlledMedicinesPage';
+import ControlledMedicineFormPage from './pages/secure/ControlledMedicineFormPage';
+import ControlledPOSPage from './pages/secure/ControlledPOSPage';
+import ControlledSalesPage from './pages/secure/ControlledSalesPage';
+import ControlledPurchasesPage from './pages/secure/ControlledPurchasesPage';
+import ControlledReportsPage from './pages/secure/ControlledReportsPage';
+import ControlledAccessLogsPage from './pages/secure/ControlledAccessLogsPage';
+import { useControlledModule } from './context/ControlledModuleContext';
 import useAutoSelectInputs from './hooks/useAutoSelect';
 
 function ProtectedRoute({ children, roles }) {
@@ -56,6 +66,18 @@ function ProtectedRoute({ children, roles }) {
   if (loading) return <LoadingScreen />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (roles && !roles.includes(user?.role)) return <Navigate to="/dashboard" replace />;
+  return children;
+}
+
+// Gate for /secure/* — requires main login AND an active module session.
+// If the module is locked (no token, expired, disabled, inspection mode),
+// bounce back to /dashboard. Lock icon stays the only entry point.
+function ModuleProtectedRoute({ children }) {
+  const { isAuthenticated, loading } = useAuth();
+  const { unlocked } = useControlledModule();
+  if (loading) return <LoadingScreen />;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!unlocked) return <Navigate to="/dashboard" replace />;
   return children;
 }
 
@@ -84,6 +106,19 @@ export default function App() {
 
       {/* POS — Full Screen (no sidebar) */}
       <Route path="/pos" element={<ProtectedRoute roles={['StoreAdmin','Pharmacist','Cashier']}><POSTerminal /></ProtectedRoute>} />
+
+      {/* Hidden Controlled-Drugs Module — own layout, requires unlocked session */}
+      <Route path="/secure" element={<ModuleProtectedRoute><SecureLayout /></ModuleProtectedRoute>}>
+        <Route index element={<VaultDashboard />} />
+        <Route path="pos" element={<ControlledPOSPage />} />
+        <Route path="medicines" element={<ControlledMedicinesPage />} />
+        <Route path="medicines/new" element={<ControlledMedicineFormPage />} />
+        <Route path="medicines/:id/edit" element={<ControlledMedicineFormPage />} />
+        <Route path="sales" element={<ControlledSalesPage />} />
+        <Route path="purchases" element={<ControlledPurchasesPage />} />
+        <Route path="reports" element={<ControlledReportsPage />} />
+        <Route path="logs" element={<ControlledAccessLogsPage />} />
+      </Route>
 
       {/* Protected — Dashboard Layout */}
       <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>

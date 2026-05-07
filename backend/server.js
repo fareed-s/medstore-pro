@@ -62,6 +62,7 @@ app.use('/api/notifications', require('./routes/notification.routes'));
 app.use('/api/activity-logs', require('./routes/activitylog.routes'));
 app.use('/api/transfers', require('./routes/transfer.routes'));
 app.use('/api/superadmin', require('./routes/superadmin.routes'));
+app.use('/api/controlled', require('./routes/controlled.routes'));
 
 // Health check
 app.get('/api/health', (req, res) => {

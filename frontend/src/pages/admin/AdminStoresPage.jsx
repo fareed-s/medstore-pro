@@ -8,8 +8,9 @@ import {
   HiOutlineOfficeBuilding, HiOutlineCheck, HiOutlineBan, HiOutlineSearch,
   HiOutlineEye, HiOutlinePlus, HiOutlineX, HiOutlineClipboardCopy,
   HiOutlineRefresh, HiOutlinePencilAlt, HiOutlineSparkles, HiOutlineUpload,
-  HiOutlineKey, HiOutlineTrash,
+  HiOutlineKey, HiOutlineTrash, HiOutlineShieldCheck,
 } from 'react-icons/hi';
+import ControlledModuleModal from './ControlledModuleModal';
 
 const PLANS = ['Trial', 'Monthly', '6-Month', 'Yearly'];
 const PLAN_DAYS = { 'Monthly': 30, '6-Month': 180, 'Yearly': 365 };
@@ -74,6 +75,9 @@ export default function AdminStoresPage() {
   const [resetFor, setResetFor] = useState(null);       // store object whose admin password we're resetting
   const [resetPwd, setResetPwd] = useState('');
   const [resettingPwd, setResettingPwd] = useState(false);
+
+  // Store object whose Controlled Drugs Module SuperAdmin is configuring.
+  const [moduleFor, setModuleFor] = useState(null);
 
   useEffect(() => { fetchStores(); fetchMasterStats(); }, []);
 
@@ -376,6 +380,7 @@ export default function AdminStoresPage() {
                   onToggleCatalog={() => setCatalog(s, !s.hasMasterCatalog)}
                   onResetPassword={() => openReset(s)}
                   onDelete={() => removeStore(s)}
+                  onControlledModule={() => setModuleFor(s)}
                 />
               ))}
               {!filtered.length && (
@@ -623,6 +628,11 @@ export default function AdminStoresPage() {
           <button onClick={() => setCreatedInfo(null)} className="btn-primary mt-4 w-full">Done</button>
         </Modal>
       )}
+
+      {/* Controlled Drugs Module — SuperAdmin per-store management */}
+      {moduleFor && (
+        <ControlledModuleModal store={moduleFor} onClose={() => setModuleFor(null)} />
+      )}
     </div>
   );
 }
@@ -668,7 +678,7 @@ function PlanFields({ form, set, previewExpiry }) {
 
 // ─── StoreRow — table row with status + actions ─────────────────────────────
 
-function StoreRow({ s, onView, onApprove, onSuspend, onReactivate, onEditPlan, onToggleCatalog, onResetPassword, onDelete }) {
+function StoreRow({ s, onView, onApprove, onSuspend, onReactivate, onEditPlan, onToggleCatalog, onResetPassword, onDelete, onControlledModule }) {
   const expired = s.planEndDate && new Date(s.planEndDate) < new Date();
   const initial = (s.adminName || s.storeName || '?').charAt(0).toUpperCase();
   return (
@@ -724,6 +734,9 @@ function StoreRow({ s, onView, onApprove, onSuspend, onReactivate, onEditPlan, o
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center justify-end gap-1">
+          <button onClick={onControlledModule} title="Controlled drugs module" className="p-1.5 rounded hover:bg-gray-900/5 text-gray-600">
+            <HiOutlineShieldCheck className="w-4 h-4" />
+          </button>
           <button onClick={onResetPassword} title="Reset admin password" className="p-1.5 rounded hover:bg-amber-50 text-amber-600">
             <HiOutlineKey className="w-4 h-4" />
           </button>

@@ -8,6 +8,7 @@ import App from './App';
 import store from './store';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { ControlledModuleProvider } from './context/ControlledModuleContext';
 import './index.css';
 import { registerSW } from './utils/pwa';
 
@@ -17,8 +18,10 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <BrowserRouter>
         <ThemeProvider>
           <AuthProvider>
-            <App />
-            <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} theme="colored" />
+            <ControlledModuleProvider>
+              <App />
+              <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} theme="colored" />
+            </ControlledModuleProvider>
           </AuthProvider>
         </ThemeProvider>
       </BrowserRouter>
