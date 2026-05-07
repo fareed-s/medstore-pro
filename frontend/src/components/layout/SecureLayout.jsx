@@ -15,7 +15,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import {
   HiOutlineViewGrid, HiOutlineCube, HiOutlineCash, HiOutlineClipboardList,
   HiOutlineTruck, HiOutlineDocumentReport, HiOutlineShieldCheck, HiOutlineLogout,
-  HiOutlineExclamation,
+  HiOutlineExclamation, HiOutlineClock,
 } from 'react-icons/hi';
 import { useControlledModule, controlledApi } from '../../context/ControlledModuleContext';
 import { confirmDanger } from '../../utils/swal';
@@ -26,6 +26,7 @@ const nav = [
   { path: '/secure',            label: 'Vault Dashboard', icon: HiOutlineViewGrid, end: true },
   { path: '/secure/pos',        label: 'POS',             icon: HiOutlineCash },
   { path: '/secure/medicines',  label: 'Medicines',       icon: HiOutlineCube },
+  { path: '/secure/expiry',     label: 'Expiry Tracker',  icon: HiOutlineClock },
   { path: '/secure/sales',      label: 'Sales',           icon: HiOutlineClipboardList },
   { path: '/secure/purchases',  label: 'Purchases',       icon: HiOutlineTruck },
   { path: '/secure/reports',    label: 'Reports',         icon: HiOutlineDocumentReport },

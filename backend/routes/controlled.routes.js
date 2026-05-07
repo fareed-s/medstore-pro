@@ -52,6 +52,7 @@ const report = require('../controllers/controlled-report.controller');
 router.get('/reports/sales-summary', requireUnlocked, report.salesSummary);
 router.get('/reports/stock',         requireUnlocked, report.stock);
 router.get('/reports/register',      requireUnlocked, report.register);
+router.get('/expiry-dashboard',      requireUnlocked, report.expiryDashboard);
 
 // ─── Access Logs viewer (Phase 4) ─────────────────────────────────────────
 const log = require('../controllers/controlled-log.controller');

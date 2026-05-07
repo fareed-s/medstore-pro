@@ -128,6 +128,65 @@ exports.stock = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { rows, summary } });
 });
 
+// @desc    Expiry dashboard — flatten every batch across active medicines
+//          and bucket by days-to-expiry. Mirrors the main inventory's
+//          /batches/expiry-dashboard so the UI shape matches 1:1.
+// @route   GET /api/controlled/expiry-dashboard
+exports.expiryDashboard = asyncHandler(async (req, res) => {
+  const meds = await ControlledMedicine.find({ ...scope(req), isActive: true })
+    .select('medicineName genericName schedule defaultSalePrice batches')
+    .lean();
+
+  const now = new Date();
+  const after = (n) => new Date(now.getTime() + n * 86400000);
+
+  const buckets = {
+    expired:   { items: [] },
+    within30:  { items: [] },
+    within60:  { items: [] },
+    within90:  { items: [] },
+    within180: { items: [] },
+  };
+
+  for (const m of meds) {
+    for (const b of (m.batches || [])) {
+      if (!b.expiryDate || (b.quantity || 0) <= 0) continue;
+      const exp = new Date(b.expiryDate);
+      // Shape mirrors what the main ExpiryRow expects so a future refactor
+      // could share the component if we want.
+      const flat = {
+        _id: b._id,
+        batchNumber: b.batchNumber,
+        expiryDate: b.expiryDate,
+        remainingQty: b.quantity,
+        salePrice: b.salePrice || m.defaultSalePrice || 0,
+        medicineId: {
+          _id: m._id,
+          medicineName: m.medicineName,
+          genericName: m.genericName,
+          schedule: m.schedule,
+          salePrice: m.defaultSalePrice || 0,
+        },
+      };
+
+      if      (exp < now)            buckets.expired.items.push(flat);
+      else if (exp <= after(30))     buckets.within30.items.push(flat);
+      else if (exp <= after(60))     buckets.within60.items.push(flat);
+      else if (exp <= after(90))     buckets.within90.items.push(flat);
+      else if (exp <= after(180))    buckets.within180.items.push(flat);
+    }
+  }
+
+  for (const key of Object.keys(buckets)) {
+    const b = buckets[key];
+    b.items.sort((a, c) => new Date(a.expiryDate) - new Date(c.expiryDate));
+    b.count = b.items.length;
+    b.value = b.items.reduce((s, it) => s + (it.remainingQty * (it.salePrice || 0)), 0);
+  }
+
+  res.json({ success: true, data: buckets });
+});
+
 // @desc    Register report — flat chronological list of every sale line for
 //          a given date range. Mirrors the legal Form 4 "narcotic register".
 // @route   GET /api/controlled/reports/register

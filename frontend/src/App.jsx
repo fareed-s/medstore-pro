@@ -58,6 +58,7 @@ import ControlledSalesPage from './pages/secure/ControlledSalesPage';
 import ControlledPurchasesPage from './pages/secure/ControlledPurchasesPage';
 import ControlledReportsPage from './pages/secure/ControlledReportsPage';
 import ControlledAccessLogsPage from './pages/secure/ControlledAccessLogsPage';
+import ControlledExpiryPage from './pages/secure/ControlledExpiryPage';
 import { useControlledModule } from './context/ControlledModuleContext';
 import useAutoSelectInputs from './hooks/useAutoSelect';
 
@@ -114,6 +115,7 @@ export default function App() {
         <Route path="medicines" element={<ControlledMedicinesPage />} />
         <Route path="medicines/new" element={<ControlledMedicineFormPage />} />
         <Route path="medicines/:id/edit" element={<ControlledMedicineFormPage />} />
+        <Route path="expiry" element={<ControlledExpiryPage />} />
         <Route path="sales" element={<ControlledSalesPage />} />
         <Route path="purchases" element={<ControlledPurchasesPage />} />
         <Route path="reports" element={<ControlledReportsPage />} />
