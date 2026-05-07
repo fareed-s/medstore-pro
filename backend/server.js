@@ -5,6 +5,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
 const path = require('path');
+const fs = require('fs');
 const cron = require('node-cron');
 require('dotenv').config();
 
@@ -38,8 +39,46 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
-// Static files
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// ── Static uploads — robust custom handler ────────────────────────────────
+// We replaced `express.static` here because in Docker bind-mounted volumes
+// it sometimes 404'd files that genuinely existed on disk (newly-written
+// avatars in particular). This handler does an explicit fs.access on every
+// request, streams the file fresh, and never caches a 404 in the browser
+// (so the next page reload re-tries instead of getting a phantom failure).
+const UPLOADS_ROOT = path.join(__dirname, 'uploads');
+app.use('/uploads', async (req, res, next) => {
+  // Guard against path traversal — only allow paths that resolve INSIDE
+  // the uploads root. decodeURIComponent because filenames may have
+  // url-encoded characters.
+  let rel;
+  try { rel = decodeURIComponent(req.path); }
+  catch { return res.status(400).end(); }
+
+  const absPath = path.join(UPLOADS_ROOT, rel);
+  if (!absPath.startsWith(UPLOADS_ROOT)) {
+    return res.status(400).end();
+  }
+
+  try {
+    await fs.promises.access(absPath, fs.constants.R_OK);
+  } catch {
+    // 404 — but tell the browser NOT to cache, so a re-upload that creates
+    // the same filename starts working immediately on next request.
+    res.set('Cache-Control', 'no-store, must-revalidate');
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(`[uploads] 404 ${rel}`);
+    }
+    return res.status(404).json({ success: false, message: 'File not found', path: rel });
+  }
+
+  // Found — stream it. Disable etag/lastModified to avoid 304s while we're
+  // shaking out edge cases; static images are tiny so the bandwidth cost is
+  // negligible.
+  res.set('Cache-Control', 'public, max-age=300');
+  res.sendFile(absPath, { etag: false, lastModified: false }, (err) => {
+    if (err && !res.headersSent) next(err);
+  });
+});
 
 // Routes
 app.use('/api/auth', require('./routes/auth.routes'));
