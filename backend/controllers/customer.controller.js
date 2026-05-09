@@ -51,16 +51,24 @@ exports.deleteCustomer = asyncHandler(async (req, res) => {
 });
 
 // ═══ SEARCH (for POS) ═══
+// Prefix-match on name (so typing "ab" returns names starting with "ab"
+// alphabetically) and contains-match on phone (cashiers often remember
+// only the last 4 digits, so partial-digit search must keep working).
 exports.searchCustomers = asyncHandler(async (req, res) => {
   const { q } = req.query;
   if (!q || q.length < 2) return res.json({ success: true, data: [] });
+  const safe = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const customers = await Customer.find({
     storeId: req.user.storeId, isActive: true,
     $or: [
-      { customerName: { $regex: q, $options: 'i' } },
-      { phone: { $regex: q, $options: 'i' } },
+      { customerName: { $regex: `^${safe}`, $options: 'i' } },
+      { phone:        { $regex: safe,       $options: 'i' } },
     ],
-  }).select('customerName phone customerType currentBalance allergies').limit(10);
+  })
+    .collation({ locale: 'en', strength: 2 })
+    .sort({ customerName: 1 })
+    .select('customerName phone customerType currentBalance allergies')
+    .limit(10);
   res.json({ success: true, data: customers });
 });
 

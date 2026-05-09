@@ -120,10 +120,13 @@ export default function POSTerminal() {
     if(custSearch.length<2){setCustResults([]);return;}
     const t=setTimeout(async()=>{
       if (!online && user?.storeId) {
+        // Prefix on name, contains on phone — same logic as the server
+        // search so the cashier sees the same list online or off.
         const needle = custSearch.toLowerCase();
         const all = await getCachedCustomers(user.storeId);
         setCustResults(all
-          .filter((c) => c.name?.toLowerCase().includes(needle) || c.phone?.includes(custSearch))
+          .filter((c) => c.name?.toLowerCase().startsWith(needle) || c.phone?.includes(custSearch))
+          .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }))
           .slice(0, 10)
           // Server returns customerName; cache stores name. Normalise.
           .map((c) => ({ ...c, customerName: c.name || c.customerName }))
