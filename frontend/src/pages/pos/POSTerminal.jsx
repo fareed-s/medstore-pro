@@ -383,37 +383,40 @@ export default function POSTerminal() {
         <span className="text-white/50 text-xs hidden md:block">F2 Search · F5 Hold · F10 Complete</span>
         <span className="text-white/80 text-sm font-medium">{user?.name}</span>
       </div>
-      <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
-        {/* ─── SECTION 1: MEDICINES (45%) ─────────────────────────────── */}
-        <div className="w-full lg:flex-[45] flex flex-col lg:border-r border-gray-200 bg-white lg:overflow-hidden">
-          <div className="p-3 border-b border-gray-100 relative">
-            <div className="relative">
-              <HiOutlineSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"/>
-              <input ref={searchRef}
-                className="w-full pl-11 pr-4 py-3 text-base rounded-xl border-2 border-primary-200 focus:border-primary-500 outline-none"
-                placeholder="Scan barcode or search medicines..."
-                value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} onKeyDown={handleSearchKey}/>
-            </div>
-            {searchResults.length>0&&(
-              <div className="absolute z-20 left-3 right-3 mt-1 bg-white rounded-xl shadow-2xl border max-h-72 overflow-y-auto">
-                {searchResults.map(m=>(
-                  <button key={m._id} onClick={()=>addToCart(m)}
-                    className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-primary-50 text-left border-b border-gray-50 last:border-0">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{m.medicineName}</p>
-                      <p className="text-xs text-gray-400">{m.genericName}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-bold text-primary-600 text-sm">{formatCurrency(m.salePrice)}</p>
-                      <p className={`text-xs ${m.currentStock<=0?'text-red-500 font-bold':'text-gray-400'}`}>Stock: {m.currentStock}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
+      {/* Search bar — always visible at top, above the 3-column area.
+          On mobile it's the only way to add medicines (tile grid is hidden). */}
+      <div className="p-3 border-b border-gray-100 bg-white relative flex-shrink-0">
+        <div className="relative">
+          <HiOutlineSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"/>
+          <input ref={searchRef}
+            className="w-full pl-11 pr-4 py-3 text-base rounded-xl border-2 border-primary-200 focus:border-primary-500 outline-none"
+            placeholder="Scan barcode or search medicines..."
+            value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} onKeyDown={handleSearchKey}/>
+        </div>
+        {searchResults.length>0&&(
+          <div className="absolute z-20 left-3 right-3 lg:right-auto lg:w-[45%] mt-1 bg-white rounded-xl shadow-2xl border max-h-72 overflow-y-auto">
+            {searchResults.map(m=>(
+              <button key={m._id} onClick={()=>addToCart(m)}
+                className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-primary-50 text-left border-b border-gray-50 last:border-0">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm truncate">{m.medicineName}</p>
+                  <p className="text-xs text-gray-400">{m.genericName}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-bold text-primary-600 text-sm">{formatCurrency(m.salePrice)}</p>
+                  <p className={`text-xs ${m.currentStock<=0?'text-red-500 font-bold':'text-gray-400'}`}>Stock: {m.currentStock}</p>
+                </div>
+              </button>
+            ))}
           </div>
-          {/* Category tabs + tile grid: hidden on mobile (search is the only flow there) */}
-          <div className="hidden lg:flex gap-1.5 px-3 py-2 border-b border-gray-100 overflow-x-auto flex-shrink-0">
+        )}
+      </div>
+
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        {/* ─── SECTION 1: MEDICINES TILES (desktop only, 45%) ────────── */}
+        <div className="hidden lg:flex lg:flex-[45] flex-col lg:border-r border-gray-200 bg-white lg:overflow-hidden">
+          {/* Category tabs */}
+          <div className="flex gap-1.5 px-3 py-2 border-b border-gray-100 overflow-x-auto flex-shrink-0">
             {CAT_TABS.map(c=>(
               <button key={c} onClick={()=>{setSelectedCat(c);setTilesPage(1);}}
                 className={`px-3.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition
@@ -422,7 +425,7 @@ export default function POSTerminal() {
               </button>
             ))}
           </div>
-          <div className="hidden lg:block flex-1 overflow-y-auto p-3">
+          <div className="flex-1 overflow-y-auto p-3">
             {tilesLoading?<div className="flex justify-center py-10"><div className="w-7 h-7 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin"/></div>:
             tiles.length===0?<div className="text-center py-10 text-gray-400 text-sm">No medicines</div>:
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-2.5">
@@ -460,18 +463,20 @@ export default function POSTerminal() {
           </div>
         </div>
 
-        {/* ─── SECTION 2: CART (mobile full, lg 30%) ──────────────────── */}
-        <div className="w-full lg:flex-[30] flex flex-col lg:border-r border-gray-200 bg-white lg:overflow-hidden">
+        {/* ─── SECTION 2: CART (mobile top half, lg 30% width) ─────────
+            Mobile: flex-1 + overflow-hidden + scrollable items area inside.
+            Pairs with section 3 below — both flex-1 = 50/50 vertical split. */}
+        <div className="flex-1 min-h-0 lg:flex-[30] flex flex-col lg:border-r border-b lg:border-b-0 border-gray-200 bg-white overflow-hidden">
           <div className="px-3 py-2 bg-primary-50/60 flex items-center justify-between border-b border-primary-100 flex-shrink-0">
             <span className="text-sm font-semibold text-gray-700">🛒 Cart ({cart.length})</span>
             {cart.length>0 && <button onClick={clearCart} className="text-xs font-medium text-red-500 hover:text-red-700">Clear all</button>}
           </div>
           {cart.length===0 ? (
-            <div className="flex-1 flex items-center justify-center text-gray-400 text-sm p-6 text-center min-h-[200px]">
+            <div className="flex-1 flex items-center justify-center text-gray-400 text-sm p-6 text-center">
               Cart is empty.<br/>Search or tap a medicine to add.
             </div>
           ) : (
-            <div className="flex-1 lg:overflow-y-auto">
+            <div className="flex-1 overflow-y-auto">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 sticky top-0 z-10">
                   <tr className="text-left text-[11px] text-gray-500 uppercase tracking-wider">
@@ -522,8 +527,8 @@ export default function POSTerminal() {
           )}
         </div>
 
-        {/* ─── SECTION 3: CUSTOMER + TOTAL + PAYMENT (mobile full, lg 25%) ─ */}
-        <div className="w-full lg:flex-[25] flex flex-col bg-gray-50 lg:overflow-y-auto">
+        {/* ─── SECTION 3: CUSTOMER + TOTAL + PAYMENT (mobile bottom half, lg 25%) ─ */}
+        <div className="flex-1 min-h-0 lg:flex-[25] flex flex-col bg-gray-50 overflow-y-auto">
           <div className="p-3 bg-white border-b">
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Customer</label>
