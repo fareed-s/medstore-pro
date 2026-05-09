@@ -215,9 +215,11 @@ exports.deleteMedicine = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Medicine deleted' });
 });
 
-// @desc    Search medicines (fast POS search). Ranks prefix matches above
-//          substring matches so typing "nov" surfaces medicines that start
-//          with "Nov…" before ones that just contain it.
+// @desc    Search medicines (fast POS search). Prefix-only matching on name
+//          and generic, sorted alphabetically — typing "ab" returns only
+//          medicines that *start* with "ab" so the cashier sees the
+//          alphabetical list they expect. Barcode is still an exact match
+//          so scanning works regardless.
 // @route   GET /api/medicines/search
 exports.searchMedicines = asyncHandler(async (req, res) => {
   const { q, limit = 10 } = req.query;
@@ -228,14 +230,15 @@ exports.searchMedicines = asyncHandler(async (req, res) => {
   }
 
   const s = sanitizeSearch(q);
+  const prefix = `^${s}`;
   const filter = {
     storeId,
     isActive: true,
     $or: [
-      { medicineName: { $regex: s, $options: 'i' } },
-      { genericName: { $regex: s, $options: 'i' } },
+      { medicineName: { $regex: prefix, $options: 'i' } },
+      { genericName: { $regex: prefix, $options: 'i' } },
+      { sku:         { $regex: prefix, $options: 'i' } },
       { barcode: s },
-      { sku: { $regex: s, $options: 'i' } },
     ],
   };
   if (req.query.inStock === 'true' || req.query.inStock === '1') {
@@ -249,23 +252,11 @@ exports.searchMedicines = asyncHandler(async (req, res) => {
     ...(req.hideCost ? {} : { costPrice: 1, wholesalePrice: 1, marginPercent: 1 }),
   };
 
-  const medicines = await Medicine.aggregate([
-    { $match: filter },
-    {
-      $addFields: {
-        _rank: {
-          $cond: [
-            { $regexMatch: { input: '$medicineName', regex: `^${s}`, options: 'i' } },
-            0,
-            1,
-          ],
-        },
-      },
-    },
-    { $sort: { _rank: 1, medicineName: 1 } },
-    { $limit: parseInt(limit) },
-    { $project: projectFields },
-  ]);
+  const medicines = await Medicine.find(filter)
+    .collation({ locale: 'en', strength: 2 }) // case-insensitive A→Z sort
+    .sort({ medicineName: 1 })
+    .limit(parseInt(limit))
+    .select(projectFields);
 
   res.json({ success: true, data: medicines });
 });

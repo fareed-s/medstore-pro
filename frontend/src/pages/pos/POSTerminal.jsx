@@ -93,17 +93,20 @@ export default function POSTerminal() {
     setSearching(true);
     try{
       if (!online && user?.storeId) {
-        // OFFLINE: filter the cached catalog in-memory. Match against name,
-        // generic name, and barcode so behaviour matches the server search.
+        // OFFLINE: prefix-match name/generic/sku, exact-match barcode, then
+        // sort alphabetically — same behaviour as the server endpoint so
+        // the cashier sees the identical list whether online or off.
         const needle = q.toLowerCase();
         const all = await getCachedMedicines(user.storeId);
         const matches = all
           .filter((m) => m.isActive !== false && (m.currentStock || 0) > 0)
           .filter((m) =>
-            m.medicineName?.toLowerCase().includes(needle) ||
-            m.genericName?.toLowerCase().includes(needle) ||
-            m.barcode?.toLowerCase().includes(needle)
+            m.medicineName?.toLowerCase().startsWith(needle) ||
+            m.genericName?.toLowerCase().startsWith(needle) ||
+            m.sku?.toLowerCase().startsWith(needle) ||
+            m.barcode === q
           )
+          .sort((a, b) => (a.medicineName || '').localeCompare(b.medicineName || '', undefined, { sensitivity: 'base' }))
           .slice(0, 10);
         setSearchResults(matches);
         return;
