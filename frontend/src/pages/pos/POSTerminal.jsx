@@ -163,7 +163,12 @@ export default function POSTerminal() {
     if(!med||!med._id){toast.error('Invalid medicine');return;}
     const ex=cart.find(i=>i.medicineId===med._id);
     if(ex){
-      if(ex.quantity>=ex.stock&&ex.stock>0){toast.warning(`${med.medicineName}: Only ${ex.stock} in stock`);}
+      // Hard stop at available stock — prevents the cashier from adding
+      // more than what's actually on the shelf.
+      if(ex.stock>0 && ex.quantity>=ex.stock){
+        toast.warning(`${med.medicineName}: Only ${ex.stock} in stock`);
+        return;
+      }
       updateQty(ex.medicineId,ex.quantity+1);return;
     }
     if(med.currentStock<=0){
@@ -183,7 +188,20 @@ export default function POSTerminal() {
     }catch{}
   };
 
-  const updateQty=(id,q)=>{if(q<1)return removeItem(id);setCart(cart.map(i=>{if(i.medicineId===id){const lt=(i.unitPrice*q)-i.discount+((i.unitPrice*q-i.discount)*i.taxRate/100);return{...i,quantity:q,lineTotal:lt};}return i;}));};
+  const updateQty=(id,q)=>{
+    if(q<1)return removeItem(id);
+    setCart(cart.map(i=>{
+      if(i.medicineId===id){
+        // Clamp to available stock. Toast only when the user actually
+        // tried to exceed it (typed a too-large number, or hammered +).
+        let qty=q;
+        if(i.stock>0 && q>i.stock){qty=i.stock;toast.warning(`${i.medicineName}: Only ${i.stock} in stock`);}
+        const lt=(i.unitPrice*qty)-i.discount+((i.unitPrice*qty-i.discount)*i.taxRate/100);
+        return{...i,quantity:qty,lineTotal:lt};
+      }
+      return i;
+    }));
+  };
   const updateDisc=(id,d)=>{const dv=parseFloat(d)||0;setCart(cart.map(i=>{if(i.medicineId===id){const lt=(i.unitPrice*i.quantity)-dv+((i.unitPrice*i.quantity-dv)*i.taxRate/100);return{...i,discount:dv,lineTotal:lt};}return i;}));};
   const removeItem=id=>setCart(cart.filter(i=>i.medicineId!==id));
   const clearCart=async()=>{
@@ -228,7 +246,7 @@ export default function POSTerminal() {
     for(const item of cart){
       if(!item.medicineId){toast.error(`Invalid item in cart: ${item.medicineName||'Unknown'}`);return;}
       if(!item.quantity||item.quantity<1){toast.error(`Quantity must be at least 1 for ${item.medicineName}`);return;}
-      if(item.quantity>item.stock&&item.stock>0){toast.warning(`${item.medicineName}: Only ${item.stock} in stock, you have ${item.quantity}`);}
+      if(item.quantity>item.stock&&item.stock>0){toast.error(`${item.medicineName}: Only ${item.stock} in stock — reduce quantity`);return;}
     }
 
     // Validate payments
@@ -467,10 +485,10 @@ export default function POSTerminal() {
             Mobile uses explicit viewport heights so user sees:
               header+search ≈ 20vh  /  cart 40vh  /  checkout 40vh.
             Desktop falls back to flex sizing via lg:flex-[30]. */}
-        <div className="h-[40vh] flex-shrink-0 lg:h-auto lg:flex-shrink lg:flex-[30] flex flex-col lg:border-r border-b lg:border-b-0 border-gray-200 bg-white overflow-hidden">
-          <div className="px-3 py-2 bg-primary-50/60 flex items-center justify-between border-b border-primary-100 flex-shrink-0">
-            <span className="text-sm font-semibold text-gray-700">🛒 Cart ({cart.length})</span>
-            {cart.length>0 && <button onClick={clearCart} className="text-xs font-medium text-red-500 hover:text-red-700">Clear all</button>}
+        <div className="h-[40vh] flex-shrink-0 lg:h-auto lg:flex-shrink lg:flex-[30] flex flex-col lg:border-r border-b-4 lg:border-b-0 border-primary-200 bg-white overflow-hidden">
+          <div className="px-3 py-2.5 bg-primary-600 lg:bg-primary-50/60 flex items-center justify-between border-b border-primary-100 flex-shrink-0">
+            <span className="text-sm font-bold text-white lg:text-gray-700">🛒 CART ({cart.length})</span>
+            {cart.length>0 && <button onClick={clearCart} className="text-xs font-semibold text-white/90 hover:text-white lg:text-red-500 lg:hover:text-red-700 underline lg:no-underline">Clear all</button>}
           </div>
           {cart.length===0 ? (
             <div className="flex-1 flex items-center justify-center text-gray-400 text-sm p-6 text-center">
@@ -533,6 +551,12 @@ export default function POSTerminal() {
             bar can coexist. Hold + Complete buttons live outside the scroll
             so they're always visible at the bottom of the viewport. */}
         <div className="h-[40vh] flex-shrink-0 lg:h-auto lg:flex-shrink lg:flex-[25] flex flex-col bg-gray-50 overflow-hidden">
+          {/* Mobile-only header to make it crystal clear that this panel is
+              the billing/checkout side (paired with the cart panel above). */}
+          <div className="lg:hidden px-3 py-2.5 bg-emerald-600 flex items-center justify-between flex-shrink-0">
+            <span className="text-sm font-bold text-white">💳 BILLING & PAYMENT</span>
+            <span className="text-xs text-white/80 font-medium">Total: {formatCurrency(net)}</span>
+          </div>
           <div className="flex-1 overflow-y-auto">
           <div className="p-3 bg-white border-b">
             <div className="flex items-center justify-between mb-1.5">
