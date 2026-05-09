@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { formatCurrency } from '../../utils/helpers';
 import { toast } from 'react-toastify';
 import { confirmDanger } from '../../utils/swal';
-import { HiOutlineSearch, HiOutlineTrash, HiOutlinePlus, HiOutlineMinus, HiOutlinePause, HiOutlinePlay, HiOutlineX, HiOutlinePrinter, HiOutlineExclamation, HiOutlineSwitchHorizontal, HiOutlineCloudOff } from 'react-icons/hi';
+import { HiOutlineSearch, HiOutlineTrash, HiOutlinePlus, HiOutlineMinus, HiOutlinePause, HiOutlinePlay, HiOutlineX, HiOutlinePrinter, HiOutlineExclamation, HiOutlineSwitchHorizontal, HiOutlineStatusOffline } from 'react-icons/hi';
 import { useOffline } from '../../offline/OfflineContext';
 import { getCachedMedicines, getCachedCustomers, decrementCachedStock } from '../../offline/db';
 
@@ -326,7 +326,7 @@ export default function POSTerminal() {
         <div className="flex-1 text-center text-white font-heading font-bold text-base">POS Terminal</div>
         {!online && (
           <span className="bg-amber-500 text-amber-950 text-xs font-bold px-2.5 py-1 rounded-lg flex items-center gap-1.5">
-            <HiOutlineCloudOff className="w-4 h-4"/> OFFLINE
+            <HiOutlineStatusOffline className="w-4 h-4"/> OFFLINE
           </span>
         )}
         {interactions?.totalAlerts>0&&(

@@ -17,7 +17,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
   HiOutlineRefresh, HiOutlineTrash, HiOutlineCheck, HiOutlineExclamation,
-  HiOutlineCloud, HiOutlineCloudOff, HiOutlineClock,
+  HiOutlineCloud, HiOutlineStatusOffline, HiOutlineClock,
 } from 'react-icons/hi';
 import { useOffline } from '../../offline/OfflineContext';
 import { useAuth } from '../../context/AuthContext';
@@ -84,7 +84,7 @@ export default function OfflineSyncPage() {
               ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
               : 'bg-amber-100 text-amber-800 border-amber-200'
           }`}>
-            {online ? <HiOutlineCloud className="w-4 h-4"/> : <HiOutlineCloudOff className="w-4 h-4"/>}
+            {online ? <HiOutlineCloud className="w-4 h-4"/> : <HiOutlineStatusOffline className="w-4 h-4"/>}
             {online ? 'Online' : 'Offline'}
           </span>
           <button

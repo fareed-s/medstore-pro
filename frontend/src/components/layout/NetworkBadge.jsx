@@ -6,7 +6,7 @@
 
 import { useNavigate } from 'react-router-dom';
 import {
-  HiOutlineCloudOff, HiOutlineCloud, HiOutlineRefresh,
+  HiOutlineStatusOffline, HiOutlineCloud, HiOutlineRefresh,
 } from 'react-icons/hi';
 import { useOffline } from '../../offline/OfflineContext';
 
@@ -24,7 +24,7 @@ export default function NetworkBadge() {
         title="Working offline — click to review pending sales"
         className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-200 text-xs font-semibold hover:bg-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30"
       >
-        <HiOutlineCloudOff className="w-4 h-4" />
+        <HiOutlineStatusOffline className="w-4 h-4" />
         Offline
         {pendingCount > 0 && <span>· {pendingCount} pending</span>}
       </button>
