@@ -8,6 +8,7 @@ router.get('/', ctrl.getBatches);
 router.post('/', authorize('SuperAdmin', 'StoreAdmin', 'InventoryStaff'), ctrl.createBatch);
 router.post('/quick-stock-in', authorize('SuperAdmin', 'StoreAdmin', 'InventoryStaff'), ctrl.quickStockIn);
 router.put('/:id', authorize('SuperAdmin', 'StoreAdmin', 'InventoryStaff'), ctrl.updateBatch);
+router.delete('/:id', authorize('SuperAdmin', 'StoreAdmin'), ctrl.deleteBatch);
 router.get('/expiry-dashboard', ctrl.getExpiryDashboard);
 router.post('/adjust', authorize('SuperAdmin', 'StoreAdmin', 'InventoryStaff'), ctrl.adjustStock);
 router.get('/adjustments', ctrl.getAdjustments);

@@ -104,6 +104,20 @@ exports.updateBatch = asyncHandler(async (req, res) => {
   res.json({ success: true, data: batch });
 });
 
+// @desc    Delete a batch outright. Use sparingly — preferred path for
+//          fixing a wrong-quantity entry is updateBatch (PUT). Delete is
+//          for batches that should never have been created at all.
+exports.deleteBatch = asyncHandler(async (req, res) => {
+  const batch = await Batch.findOne({ _id: req.params.id, storeId: req.user.storeId });
+  if (!batch) return res.status(404).json({ success: false, message: 'Batch not found' });
+
+  const medicineId = batch.medicineId;
+  await batch.deleteOne();
+  await recalcStock(medicineId, req.user.storeId);
+
+  res.json({ success: true, message: 'Batch deleted' });
+});
+
 // @desc    Get expiry dashboard data
 exports.getExpiryDashboard = asyncHandler(async (req, res) => {
   const storeId = req.user.storeId;

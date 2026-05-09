@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatDate, getExpiryStatus, getScheduleBadge, getStockStatus } from '../../utils/helpers';
 import { toast } from 'react-toastify';
 import { confirmDanger } from '../../utils/swal';
-import { HiOutlinePencil, HiOutlineTrash, HiOutlinePlus } from 'react-icons/hi';
+import { HiOutlinePencil, HiOutlineTrash, HiOutlinePlus, HiOutlinePencilAlt, HiOutlineCheck, HiOutlineX } from 'react-icons/hi';
 
 export default function MedicineDetailPage() {
   const { id } = useParams();
@@ -16,6 +16,13 @@ export default function MedicineDetailPage() {
   const [showBatchForm, setShowBatchForm] = useState(false);
   const [batchForm, setBatchForm] = useState({ batchNumber: '', expiryDate: '', quantity: 0, costPrice: 0, salePrice: 0, mrp: 0 });
   const [saving, setSaving] = useState(false);
+
+  // Inline-edit row state. Holds the id of the batch currently being edited
+  // (null = not editing) and a working copy of its fields. Starting from a
+  // fresh copy each time prevents stale data leaking between rows.
+  const [editingBatchId, setEditingBatchId] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => { fetchMedicine(); }, [id]);
 
@@ -37,6 +44,57 @@ export default function MedicineDetailPage() {
       setShowBatchForm(false);
       fetchMedicine();
     } catch(err) { toast.error(err.response?.data?.message || "Operation failed"); } finally { setSaving(false); }
+  };
+
+  // Inline edit handlers ---------------------------------------------------
+  const startEditBatch = (b) => {
+    setEditingBatchId(b._id);
+    setEditForm({
+      batchNumber: b.batchNumber || '',
+      expiryDate: b.expiryDate ? b.expiryDate.slice(0, 10) : '',
+      remainingQty: b.remainingQty ?? 0,
+      costPrice: b.costPrice ?? 0,
+      salePrice: b.salePrice ?? 0,
+      mrp: b.mrp ?? 0,
+    });
+  };
+  const cancelEditBatch = () => { setEditingBatchId(null); setEditForm({}); };
+  const saveBatchEdit = async () => {
+    if (!editForm.batchNumber || !editForm.expiryDate) {
+      toast.error('Batch number and expiry date are required');
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      await API.put(`/batches/${editingBatchId}`, {
+        batchNumber: editForm.batchNumber,
+        expiryDate: editForm.expiryDate,
+        remainingQty: Number(editForm.remainingQty) || 0,
+        costPrice: Number(editForm.costPrice) || 0,
+        salePrice: Number(editForm.salePrice) || 0,
+        mrp: Number(editForm.mrp) || 0,
+      });
+      toast.success('Batch updated');
+      cancelEditBatch();
+      fetchMedicine();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Update failed');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+  const deleteBatch = async (b) => {
+    if (!(await confirmDanger(
+      `Batch ${b.batchNumber} (${b.remainingQty} units) will be permanently removed and stock will be recalculated.`,
+      { title: 'Delete batch?', confirmText: 'Delete' }
+    ))) return;
+    try {
+      await API.delete(`/batches/${b._id}`);
+      toast.success('Batch deleted');
+      fetchMedicine();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Delete failed');
+    }
   };
 
   const deleteMedicine = async () => {
@@ -146,11 +204,55 @@ export default function MedicineDetailPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="table-header">
-                <th className="px-4 py-2">Batch #</th><th className="px-4 py-2">Expiry</th><th className="px-4 py-2">Status</th><th className="px-4 py-2">Remaining</th><th className="px-4 py-2">Original</th>
+                <th className="px-4 py-2">Batch #</th>
+                <th className="px-4 py-2">Expiry</th>
+                <th className="px-4 py-2">Status</th>
+                <th className="px-4 py-2">Remaining</th>
+                <th className="px-4 py-2">Original</th>
+                {hasRole('SuperAdmin', 'StoreAdmin', 'InventoryStaff') && (
+                  <th className="px-4 py-2 text-right">Actions</th>
+                )}
               </tr></thead>
               <tbody className="divide-y divide-gray-50">
                 {med.batches.map((b) => {
                   const exp = getExpiryStatus(b.expiryDate);
+                  const isEditing = editingBatchId === b._id;
+                  const canEdit = hasRole('SuperAdmin', 'StoreAdmin', 'InventoryStaff');
+                  const canDelete = hasRole('SuperAdmin', 'StoreAdmin');
+
+                  if (isEditing) {
+                    return (
+                      <tr key={b._id} className="bg-emerald-50/40">
+                        <td className="px-4 py-2">
+                          <input className="input-field text-xs py-1.5" value={editForm.batchNumber}
+                            onChange={(e) => setEditForm({ ...editForm, batchNumber: e.target.value })} />
+                        </td>
+                        <td className="px-4 py-2">
+                          <input type="date" className="input-field text-xs py-1.5" value={editForm.expiryDate}
+                            onChange={(e) => setEditForm({ ...editForm, expiryDate: e.target.value })} />
+                        </td>
+                        <td className="px-4 py-2 text-xs text-gray-400">—</td>
+                        <td className="px-4 py-2">
+                          <input type="number" min="0" className="input-field text-xs py-1.5 w-20" value={editForm.remainingQty}
+                            onChange={(e) => setEditForm({ ...editForm, remainingQty: e.target.value })} />
+                        </td>
+                        <td className="px-4 py-2 text-gray-400">{b.quantity}</td>
+                        <td className="px-4 py-2">
+                          <div className="flex items-center justify-end gap-1">
+                            <button onClick={saveBatchEdit} disabled={savingEdit}
+                              title="Save" className="p-1.5 rounded hover:bg-emerald-100 text-emerald-600 disabled:opacity-50">
+                              <HiOutlineCheck className="w-4 h-4" />
+                            </button>
+                            <button onClick={cancelEditBatch} disabled={savingEdit}
+                              title="Cancel" className="p-1.5 rounded hover:bg-gray-100 text-gray-500">
+                              <HiOutlineX className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+
                   return (
                     <tr key={b._id} className="hover:bg-gray-50/50">
                       <td className="px-4 py-2 font-mono text-xs">{b.batchNumber}</td>
@@ -158,6 +260,22 @@ export default function MedicineDetailPage() {
                       <td className="px-4 py-2"><span className={`badge badge-${exp.color}`}>{exp.label}</span></td>
                       <td className="px-4 py-2 font-semibold">{b.remainingQty}</td>
                       <td className="px-4 py-2 text-gray-400">{b.quantity}</td>
+                      {canEdit && (
+                        <td className="px-4 py-2">
+                          <div className="flex items-center justify-end gap-1">
+                            <button onClick={() => startEditBatch(b)}
+                              title="Edit batch" className="p-1.5 rounded hover:bg-primary-50 text-primary-600">
+                              <HiOutlinePencilAlt className="w-4 h-4" />
+                            </button>
+                            {canDelete && (
+                              <button onClick={() => deleteBatch(b)}
+                                title="Delete batch" className="p-1.5 rounded hover:bg-red-50 text-red-500">
+                                <HiOutlineTrash className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
