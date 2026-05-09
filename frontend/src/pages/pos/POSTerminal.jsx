@@ -527,8 +527,12 @@ export default function POSTerminal() {
           )}
         </div>
 
-        {/* ─── SECTION 3: CUSTOMER + TOTAL + PAYMENT (mobile bottom half, lg 25%) ─ */}
-        <div className="flex-1 min-h-0 lg:flex-[25] flex flex-col bg-gray-50 overflow-y-auto">
+        {/* ─── SECTION 3: CUSTOMER + TOTAL + PAYMENT (mobile bottom half, lg 25%) ─
+            Outer is overflow-hidden so the inner scroll area + sticky action
+            bar can coexist. Hold + Complete buttons live outside the scroll
+            so they're always visible at the bottom of the viewport. */}
+        <div className="flex-1 min-h-0 lg:flex-[25] flex flex-col bg-gray-50 overflow-hidden">
+          <div className="flex-1 overflow-y-auto">
           <div className="p-3 bg-white border-b">
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Customer</label>
@@ -617,7 +621,9 @@ export default function POSTerminal() {
               </p>
             )}
           </div>
-          <div className="p-3 space-y-2 lg:mt-auto">
+          </div>
+          {/* Sticky action bar — always visible at the bottom of section 3 */}
+          <div className="p-3 space-y-2 border-t border-gray-200 bg-white flex-shrink-0">
             {heldBills.length>0&&(
               <button onClick={()=>setShowHeld(true)} className="w-full py-2 rounded-xl border-2 border-amber-300 bg-amber-50 text-amber-700 font-medium text-sm flex items-center justify-center gap-2">
                 <HiOutlinePlay className="w-4 h-4"/>Resume ({heldBills.length})
