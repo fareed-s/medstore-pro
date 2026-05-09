@@ -49,6 +49,7 @@ import StockTransferPage from './pages/transfers/StockTransferPage';
 import AdminStoresPage from './pages/admin/AdminStoresPage';
 import MasterCatalogPage from './pages/admin/MasterCatalogPage';
 import QuickStockInPage from './pages/inventory/QuickStockInPage';
+import OfflineSyncPage from './pages/settings/OfflineSyncPage';
 import SecureLayout from './components/layout/SecureLayout';
 import VaultDashboard from './pages/secure/VaultDashboard';
 import ControlledMedicinesPage from './pages/secure/ControlledMedicinesPage';
@@ -171,6 +172,7 @@ export default function App() {
         <Route path="sales/:id/return" element={<ProtectedRoute roles={['SuperAdmin','StoreAdmin','Pharmacist']}><SaleReturnPage /></ProtectedRoute>} />
         <Route path="staff" element={<ProtectedRoute roles={['SuperAdmin','StoreAdmin']}><StaffPage /></ProtectedRoute>} />
         <Route path="settings" element={<ProtectedRoute roles={['SuperAdmin','StoreAdmin']}><SettingsPage /></ProtectedRoute>} />
+        <Route path="settings/offline-sync" element={<OfflineSyncPage />} />
         <Route path="profile" element={<ProfilePage />} />
       </Route>
 

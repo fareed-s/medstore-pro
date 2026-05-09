@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { ROLE_LABELS } from '../../utils/helpers';
 import SubscriptionBanner from '../SubscriptionBanner';
+import NetworkBadge from './NetworkBadge';
 import {
   HiOutlineViewGrid, HiOutlineCube, HiOutlineTag, HiOutlineArchive, HiOutlineClock,
   HiOutlineUsers, HiOutlineCog, HiOutlineLogout, HiOutlineMenu, HiOutlineBell,
@@ -11,7 +12,7 @@ import {
   HiOutlineClipboardCheck, HiOutlineTrendingDown, HiOutlineLocationMarker,
   HiOutlineShoppingCart, HiOutlineTruck, HiOutlineDocumentText, HiOutlineInboxIn,
   HiOutlineOfficeBuilding, HiOutlineUpload, HiOutlineLightningBolt,
-  HiOutlineUser, HiOutlineSun, HiOutlineMoon,
+  HiOutlineUser, HiOutlineSun, HiOutlineMoon, HiOutlineCloud,
 } from 'react-icons/hi';
 
 // SuperAdmin (SaaS owner) navigation — kept lean: only what we actively use.
@@ -54,6 +55,7 @@ const storeNav = [
   { path: '/receipt-designer',       label: 'Receipt Design',    icon: HiOutlineCash,             module: 'settings' },
   { path: '/barcode-labels',         label: 'Barcode Labels',    icon: HiOutlineClipboardList,    module: 'medicines' },
   { path: '/activity-log',           label: 'Audit Log',         icon: HiOutlineClipboardList,    module: 'settings' },
+  { path: '/settings/offline-sync',  label: 'Offline Sync',      icon: HiOutlineCloud },
   { path: '/settings',               label: 'Settings',          icon: HiOutlineCog,              module: 'settings' },
 ];
 
@@ -141,6 +143,7 @@ export default function DashboardLayout() {
           <div className="flex-1 sm:hidden" />
 
           <div className="flex items-center gap-2 ml-auto">
+            <NetworkBadge />
             <ThemeToggle />
             <button onClick={() => navigate('/notifications')} className="btn-ghost p-2 relative" title="Notifications">
               <HiOutlineBell className="w-5 h-5" />

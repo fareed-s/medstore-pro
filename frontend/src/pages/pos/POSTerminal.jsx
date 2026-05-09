@@ -5,7 +5,9 @@ import { useAuth } from '../../context/AuthContext';
 import { formatCurrency } from '../../utils/helpers';
 import { toast } from 'react-toastify';
 import { confirmDanger } from '../../utils/swal';
-import { HiOutlineSearch, HiOutlineTrash, HiOutlinePlus, HiOutlineMinus, HiOutlinePause, HiOutlinePlay, HiOutlineX, HiOutlinePrinter, HiOutlineExclamation, HiOutlineSwitchHorizontal } from 'react-icons/hi';
+import { HiOutlineSearch, HiOutlineTrash, HiOutlinePlus, HiOutlineMinus, HiOutlinePause, HiOutlinePlay, HiOutlineX, HiOutlinePrinter, HiOutlineExclamation, HiOutlineSwitchHorizontal, HiOutlineCloudOff } from 'react-icons/hi';
+import { useOffline } from '../../offline/OfflineContext';
+import { getCachedMedicines, getCachedCustomers, decrementCachedStock } from '../../offline/db';
 
 const PAY_METHODS = [{key:'cash',label:'Cash',icon:'💵'},{key:'card',label:'Card',icon:'💳'},{key:'upi',label:'UPI',icon:'📱'},{key:'credit',label:'Credit',icon:'📝'}];
 const CAT_TABS = ['All','Tablet','Capsule','Syrup','Injection','Cream/Ointment','Drops','Inhaler','Sachet','Gel'];
@@ -13,6 +15,7 @@ const CAT_TABS = ['All','Tablet','Capsule','Syrup','Injection','Cream/Ointment',
 export default function POSTerminal() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { online, queueSaleOffline } = useOffline();
   const searchRef = useRef(null);
   const [cart, setCart] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -65,6 +68,17 @@ export default function POSTerminal() {
   const fetchTiles = async()=>{
     setTilesLoading(true);
     try{
+      if (!online && user?.storeId) {
+        // OFFLINE: paginate locally over the cached catalog. Same shape (40
+        // per page, optional category filter, in-stock only) so the UI is
+        // indistinguishable from the online flow.
+        let cached = await getCachedMedicines(user.storeId);
+        cached = cached.filter((m) => m.isActive !== false && (m.currentStock || 0) > 0);
+        if (selectedCat !== 'All') cached = cached.filter((m) => m.category === selectedCat);
+        const start = (tilesPage - 1) * 40;
+        setTiles(cached.slice(start, start + 40));
+        return;
+      }
       // POS only ever shows medicines that are actually sellable — inStock=true
       // hides anything with currentStock <= 0 at the database level.
       const p=new URLSearchParams({page:tilesPage,limit:40,inStock:'true'});
@@ -76,15 +90,46 @@ export default function POSTerminal() {
   const searchMeds = useCallback(async q=>{
     if(!q||q.length<1){setSearchResults([]);return;}
     setSearching(true);
-    try{const{data}=await API.get(`/medicines/search?q=${encodeURIComponent(q)}&limit=10&inStock=true`);setSearchResults(data.data);}catch{}finally{setSearching(false);}
-  },[]);
+    try{
+      if (!online && user?.storeId) {
+        // OFFLINE: filter the cached catalog in-memory. Match against name,
+        // generic name, and barcode so behaviour matches the server search.
+        const needle = q.toLowerCase();
+        const all = await getCachedMedicines(user.storeId);
+        const matches = all
+          .filter((m) => m.isActive !== false && (m.currentStock || 0) > 0)
+          .filter((m) =>
+            m.medicineName?.toLowerCase().includes(needle) ||
+            m.genericName?.toLowerCase().includes(needle) ||
+            m.barcode?.toLowerCase().includes(needle)
+          )
+          .slice(0, 10);
+        setSearchResults(matches);
+        return;
+      }
+      const{data}=await API.get(`/medicines/search?q=${encodeURIComponent(q)}&limit=10&inStock=true`);setSearchResults(data.data);
+    }catch{}finally{setSearching(false);}
+  },[online, user?.storeId]);
   useEffect(()=>{const t=setTimeout(()=>searchMeds(searchQuery),200);return()=>clearTimeout(t);},[searchQuery,searchMeds]);
 
   useEffect(()=>{
     if(custSearch.length<2){setCustResults([]);return;}
-    const t=setTimeout(async()=>{try{const{data}=await API.get(`/customers/search?q=${custSearch}`);setCustResults(data.data);}catch{}},300);
+    const t=setTimeout(async()=>{
+      if (!online && user?.storeId) {
+        const needle = custSearch.toLowerCase();
+        const all = await getCachedCustomers(user.storeId);
+        setCustResults(all
+          .filter((c) => c.name?.toLowerCase().includes(needle) || c.phone?.includes(custSearch))
+          .slice(0, 10)
+          // Server returns customerName; cache stores name. Normalise.
+          .map((c) => ({ ...c, customerName: c.name || c.customerName }))
+        );
+        return;
+      }
+      try{const{data}=await API.get(`/customers/search?q=${custSearch}`);setCustResults(data.data);}catch{}
+    },300);
     return()=>clearTimeout(t);
-  },[custSearch]);
+  },[custSearch, online, user?.storeId]);
 
   const selectCust=c=>{setCustomerId(c._id);setCustomerName(c.customerName);setCustomerPhone(c.phone);setCustSearch(c.customerName);setCustResults([]);setShowAddCust(false);};
   
@@ -99,7 +144,19 @@ export default function POSTerminal() {
       toast.success(`✅ Customer "${data.data.customerName}" added`);
     }catch(err){toast.error(err.response?.data?.message||'Failed to add customer');}
   };
-  const handleSearchKey=async e=>{if(e.key==='Enter'&&searchQuery.length>=8){try{const{data}=await API.get(`/medicines/barcode/${searchQuery}`);if(data.data){addToCart(data.data);setSearchQuery('');setSearchResults([]);}}catch{toast.error('Barcode not found');}}};
+  const handleSearchKey=async e=>{
+    if(e.key==='Enter'&&searchQuery.length>=8){
+      if (!online && user?.storeId) {
+        // Barcode lookup against the cache.
+        const all = await getCachedMedicines(user.storeId);
+        const hit = all.find((m) => m.barcode === searchQuery);
+        if (hit) { addToCart(hit); setSearchQuery(''); setSearchResults([]); }
+        else toast.error('Barcode not found in offline cache');
+        return;
+      }
+      try{const{data}=await API.get(`/medicines/barcode/${searchQuery}`);if(data.data){addToCart(data.data);setSearchQuery('');setSearchResults([]);}}catch{toast.error('Barcode not found');}
+    }
+  };
 
   const addToCart=async med=>{
     if(!med||!med._id){toast.error('Invalid medicine');return;}
@@ -202,18 +259,52 @@ export default function POSTerminal() {
 
     // ── PROCESS SALE ──
     setProcessing(true);
-    try{
-      const printName=billName.trim()||customerName;
-      const{data}=await API.post('/sales',{
-        items:cart.map(i=>({medicineId:i.medicineId,medicineName:i.medicineName,quantity:i.quantity,unitPrice:i.unitPrice,discount:i.discount||0,taxRate:i.taxRate||0})),
-        payments:pl,customerName:printName,customerPhone,customerId,
-        overallDiscount:discMode==='amt'?(overallDiscAmt||0):0,
-        overallDiscountPercent:discMode==='pct'?(overallDiscPct||0):0
-      });
-      setLastSale(data.data);setShowReceipt(true);
-      toast.success(`✅ Sale completed: ${data.data.invoiceNo} — ${formatCurrency(data.data.netTotal)}`);
+    const printName=billName.trim()||customerName;
+    const payload = {
+      items:cart.map(i=>({medicineId:i.medicineId,medicineName:i.medicineName,quantity:i.quantity,unitPrice:i.unitPrice,discount:i.discount||0,taxRate:i.taxRate||0})),
+      payments:pl,customerName:printName,customerPhone,customerId,
+      overallDiscount:discMode==='amt'?(overallDiscAmt||0):0,
+      overallDiscountPercent:discMode==='pct'?(overallDiscPct||0):0
+    };
+
+    const resetCart = () => {
       setCart([]);setOverallDiscPct(0);setOverallDiscAmt(0);setDiscMode('pct');setBillName('');setPayments([{method:'cash',amount:'',reference:''}]);
       setCustomerName('Walk-in Customer');setCustomerPhone('');setCustomerId(null);setCustSearch('');setInteractions(null);
+    };
+
+    try{
+      // ── OFFLINE PATH: queue locally, decrement cache, show receipt with
+      //                  a temporary invoice number so the cashier can hand
+      //                  it to the customer right away.
+      if (!online) {
+        const tempId = await queueSaleOffline(payload);
+        // Best-effort cache decrement so future searches show realistic stock.
+        await decrementCachedStock(user.storeId, cart.map((i) => ({
+          medicineId: i.medicineId, quantity: i.quantity,
+        })));
+        // Build a "fake" sale doc to drive the existing receipt UI.
+        setLastSale({
+          invoiceNo: tempId,
+          createdAt: new Date(),
+          customerName: printName,
+          cashierName: user?.name,
+          items: cart.map((i) => ({ ...i, lineTotal: i.lineTotal })),
+          netTotal: net,
+          totalPaid: totalPay || net,
+          changeGiven: Math.max(0, (totalPay || net) - net),
+          isOffline: true,
+        });
+        setShowReceipt(true);
+        toast.success(`✅ Saved offline: ${tempId} — will sync when online`);
+        resetCart();
+        return;
+      }
+
+      // ── ONLINE PATH (existing) ─────────────────────────────────────────
+      const{data}=await API.post('/sales', payload);
+      setLastSale(data.data);setShowReceipt(true);
+      toast.success(`✅ Sale completed: ${data.data.invoiceNo} — ${formatCurrency(data.data.netTotal)}`);
+      resetCart();
     }catch(err){
       const msg=err.response?.data?.message||'Sale failed — please try again';
       toast.error(`❌ ${msg}`);
@@ -233,6 +324,11 @@ export default function POSTerminal() {
           <HiOutlineX className="w-4 h-4"/>Exit
         </button>
         <div className="flex-1 text-center text-white font-heading font-bold text-base">POS Terminal</div>
+        {!online && (
+          <span className="bg-amber-500 text-amber-950 text-xs font-bold px-2.5 py-1 rounded-lg flex items-center gap-1.5">
+            <HiOutlineCloudOff className="w-4 h-4"/> OFFLINE
+          </span>
+        )}
         {interactions?.totalAlerts>0&&(
           <button onClick={()=>setShowInteractions(true)} className="bg-red-500 text-white text-xs px-2.5 py-1 rounded-lg flex items-center gap-1 animate-pulse">
             <HiOutlineExclamation className="w-3.5 h-3.5"/>{interactions.totalAlerts} Alerts
