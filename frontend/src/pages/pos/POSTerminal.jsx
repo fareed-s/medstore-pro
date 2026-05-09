@@ -460,13 +460,8 @@ export default function POSTerminal() {
           </div>
         </div>
 
-        {/* On mobile, wrap cart + total in a flex-row so they sit side-by-side
-            (50/50). On lg+, `contents` dissolves this wrapper so the children
-            become direct flex siblings of section 1 with their own widths. */}
-        <div className="w-full flex flex-row lg:contents">
-
-        {/* ─── SECTION 2: CART (mobile 50%, lg 30%) ───────────────────── */}
-        <div className="w-1/2 lg:w-auto lg:flex-[30] flex flex-col lg:border-r border-gray-200 bg-white lg:overflow-hidden">
+        {/* ─── SECTION 2: CART (mobile full, lg 30%) ──────────────────── */}
+        <div className="w-full lg:flex-[30] flex flex-col lg:border-r border-gray-200 bg-white lg:overflow-hidden">
           <div className="px-3 py-2 bg-primary-50/60 flex items-center justify-between border-b border-primary-100 flex-shrink-0">
             <span className="text-sm font-semibold text-gray-700">🛒 Cart ({cart.length})</span>
             {cart.length>0 && <button onClick={clearCart} className="text-xs font-medium text-red-500 hover:text-red-700">Clear all</button>}
@@ -527,8 +522,8 @@ export default function POSTerminal() {
           )}
         </div>
 
-        {/* ─── SECTION 3: CUSTOMER + TOTAL + PAYMENT (mobile 50%, lg 25%) ─ */}
-        <div className="w-1/2 lg:w-auto lg:flex-[25] flex flex-col bg-gray-50 lg:overflow-y-auto">
+        {/* ─── SECTION 3: CUSTOMER + TOTAL + PAYMENT (mobile full, lg 25%) ─ */}
+        <div className="w-full lg:flex-[25] flex flex-col bg-gray-50 lg:overflow-y-auto">
           <div className="p-3 bg-white border-b">
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Customer</label>
@@ -631,8 +626,6 @@ export default function POSTerminal() {
               {processing?'Processing...':'✓ Complete — '+formatCurrency(net)}
             </button>
           </div>
-        </div>
-
         </div>
       </div>
       {showHeld&&<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={()=>setShowHeld(false)}><div className="bg-white rounded-2xl w-full max-w-lg max-h-[70vh] overflow-hidden" onClick={e=>e.stopPropagation()}><div className="px-5 py-3 border-b flex justify-between"><h3 className="font-heading font-bold">Held({heldBills.length})</h3><button onClick={()=>setShowHeld(false)}><HiOutlineX className="w-5 h-5"/></button></div><div className="overflow-y-auto max-h-[55vh] divide-y">{heldBills.map(h=><div key={h._id} className="px-5 py-3 flex items-center gap-3 hover:bg-gray-50"><div className="flex-1"><p className="font-medium text-sm">{h.customerName||'Walk-in'}</p><p className="text-xs text-gray-400">{h.items?.length} items • {formatCurrency(h.subtotal)}</p></div><button onClick={()=>resumeBill(h._id)} className="btn-primary text-xs px-3 py-1">Resume</button><button onClick={async()=>{await API.delete(`/sales/held/${h._id}`);fetchHeldBills();}} className="p-1 hover:bg-red-50 rounded"><HiOutlineTrash className="w-4 h-4 text-red-400"/></button></div>)}</div></div></div>}
