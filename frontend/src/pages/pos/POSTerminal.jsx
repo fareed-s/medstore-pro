@@ -463,10 +463,11 @@ export default function POSTerminal() {
           </div>
         </div>
 
-        {/* ─── SECTION 2: CART (mobile top half, lg 30% width) ─────────
-            Mobile: flex-1 + overflow-hidden + scrollable items area inside.
-            Pairs with section 3 below — both flex-1 = 50/50 vertical split. */}
-        <div className="flex-1 min-h-0 lg:flex-[30] flex flex-col lg:border-r border-b lg:border-b-0 border-gray-200 bg-white overflow-hidden">
+        {/* ─── SECTION 2: CART (mobile 40vh fixed, lg 30% width) ───────
+            Mobile uses explicit viewport heights so user sees:
+              header+search ≈ 20vh  /  cart 40vh  /  checkout 40vh.
+            Desktop falls back to flex sizing via lg:flex-[30]. */}
+        <div className="h-[40vh] flex-shrink-0 lg:h-auto lg:flex-shrink lg:flex-[30] flex flex-col lg:border-r border-b lg:border-b-0 border-gray-200 bg-white overflow-hidden">
           <div className="px-3 py-2 bg-primary-50/60 flex items-center justify-between border-b border-primary-100 flex-shrink-0">
             <span className="text-sm font-semibold text-gray-700">🛒 Cart ({cart.length})</span>
             {cart.length>0 && <button onClick={clearCart} className="text-xs font-medium text-red-500 hover:text-red-700">Clear all</button>}
@@ -527,11 +528,11 @@ export default function POSTerminal() {
           )}
         </div>
 
-        {/* ─── SECTION 3: CUSTOMER + TOTAL + PAYMENT (mobile bottom half, lg 25%) ─
+        {/* ─── SECTION 3: CUSTOMER + TOTAL + PAYMENT (mobile 40vh fixed, lg 25%) ─
             Outer is overflow-hidden so the inner scroll area + sticky action
             bar can coexist. Hold + Complete buttons live outside the scroll
             so they're always visible at the bottom of the viewport. */}
-        <div className="flex-1 min-h-0 lg:flex-[25] flex flex-col bg-gray-50 overflow-hidden">
+        <div className="h-[40vh] flex-shrink-0 lg:h-auto lg:flex-shrink lg:flex-[25] flex flex-col bg-gray-50 overflow-hidden">
           <div className="flex-1 overflow-y-auto">
           <div className="p-3 bg-white border-b">
             <div className="flex items-center justify-between mb-1.5">
