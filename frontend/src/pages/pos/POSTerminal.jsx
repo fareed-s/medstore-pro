@@ -384,8 +384,9 @@ export default function POSTerminal() {
         <span className="text-white/80 text-sm font-medium">{user?.name}</span>
       </div>
       <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
-        <div className="w-full lg:flex-[60] flex flex-col lg:border-r border-gray-200 bg-white">
-          <div className="p-3 border-b border-gray-100">
+        {/* ─── SECTION 1: MEDICINES (45%) ─────────────────────────────── */}
+        <div className="w-full lg:flex-[45] flex flex-col lg:border-r border-gray-200 bg-white lg:overflow-hidden">
+          <div className="p-3 border-b border-gray-100 relative">
             <div className="relative">
               <HiOutlineSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"/>
               <input ref={searchRef}
@@ -394,7 +395,7 @@ export default function POSTerminal() {
                 value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} onKeyDown={handleSearchKey}/>
             </div>
             {searchResults.length>0&&(
-              <div className="absolute z-20 left-3 right-3 lg:right-[40%] mt-1 bg-white rounded-xl shadow-2xl border max-h-72 overflow-y-auto">
+              <div className="absolute z-20 left-3 right-3 mt-1 bg-white rounded-xl shadow-2xl border max-h-72 overflow-y-auto">
                 {searchResults.map(m=>(
                   <button key={m._id} onClick={()=>addToCart(m)}
                     className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-primary-50 text-left border-b border-gray-50 last:border-0">
@@ -424,7 +425,7 @@ export default function POSTerminal() {
           <div className="hidden lg:block flex-1 overflow-y-auto p-3">
             {tilesLoading?<div className="flex justify-center py-10"><div className="w-7 h-7 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin"/></div>:
             tiles.length===0?<div className="text-center py-10 text-gray-400 text-sm">No medicines</div>:
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-2.5">
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-2.5">
               {tiles.map(m=>{
                 const oos=m.currentStock<=0;
                 const ic=cart.find(i=>i.medicineId===m._id);
@@ -457,55 +458,65 @@ export default function POSTerminal() {
               <button onClick={()=>setTilesPage(p=>p+1)} disabled={tiles.length<40} className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded-lg disabled:opacity-30">Next →</button>
             </div>
           </div>
-          {cart.length>0&&(
-            <div className="border-t-2 border-primary-100 lg:max-h-[38%] lg:overflow-y-auto flex-shrink-0 bg-white">
-              <div className="px-3 py-2 bg-primary-50/60 flex items-center justify-between sticky top-0 z-10 border-b border-primary-100">
-                <span className="text-sm font-semibold text-gray-700">🛒 {cart.length} items in cart</span>
-                <button onClick={clearCart} className="text-xs font-medium text-red-500 hover:text-red-700">Clear all</button>
-              </div>
+        </div>
+
+        {/* On mobile, wrap cart + total in a flex-row so they sit side-by-side
+            (50/50). On lg+, `contents` dissolves this wrapper so the children
+            become direct flex siblings of section 1 with their own widths. */}
+        <div className="w-full flex flex-row lg:contents">
+
+        {/* ─── SECTION 2: CART (mobile 50%, lg 30%) ───────────────────── */}
+        <div className="w-1/2 lg:w-auto lg:flex-[30] flex flex-col lg:border-r border-gray-200 bg-white lg:overflow-hidden">
+          <div className="px-3 py-2 bg-primary-50/60 flex items-center justify-between border-b border-primary-100 flex-shrink-0">
+            <span className="text-sm font-semibold text-gray-700">🛒 Cart ({cart.length})</span>
+            {cart.length>0 && <button onClick={clearCart} className="text-xs font-medium text-red-500 hover:text-red-700">Clear all</button>}
+          </div>
+          {cart.length===0 ? (
+            <div className="flex-1 flex items-center justify-center text-gray-400 text-sm p-6 text-center min-h-[200px]">
+              Cart is empty.<br/>Search or tap a medicine to add.
+            </div>
+          ) : (
+            <div className="flex-1 lg:overflow-y-auto">
               <table className="w-full text-sm">
-                <thead className="bg-gray-50 sticky top-[37px] z-10">
+                <thead className="bg-gray-50 sticky top-0 z-10">
                   <tr className="text-left text-[11px] text-gray-500 uppercase tracking-wider">
                     <th className="px-3 py-2">Item</th>
-                    <th className="px-2 py-2 w-28 text-center">Qty</th>
-                    <th className="px-2 py-2 w-24 text-right hidden sm:table-cell">Price</th>
-                    <th className="px-2 py-2 w-20 text-right hidden md:table-cell">Disc</th>
-                    <th className="px-2 py-2 w-24 text-right">Total</th>
-                    <th className="w-8"></th>
+                    <th className="px-1 py-2 w-24 text-center">Qty</th>
+                    <th className="px-2 py-2 w-20 text-right">Total</th>
+                    <th className="w-7"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {cart.map(i=>(
-                    <tr key={i.medicineId} className="hover:bg-gray-50/60">
+                    <tr key={i.medicineId} className="hover:bg-gray-50/60 align-top">
                       <td className="px-3 py-2">
-                        <p className="font-medium text-gray-900">{i.medicineName}</p>
-                        {i.genericName&&<p className="text-[11px] text-gray-400">{i.genericName}</p>}
-                        {/* On mobile, show price inline since the Price column is hidden */}
-                        <p className="text-[11px] text-gray-500 sm:hidden">{formatCurrency(i.unitPrice)} × {i.quantity}</p>
+                        <p className="font-medium text-gray-900 text-sm leading-tight">{i.medicineName}</p>
+                        {i.genericName&&<p className="text-[10px] text-gray-400 truncate">{i.genericName}</p>}
+                        <p className="text-[11px] text-gray-500 mt-0.5">{formatCurrency(i.unitPrice)} ea</p>
+                        <div className="flex items-center gap-1 mt-1">
+                          <span className="text-[10px] text-gray-400">Disc:</span>
+                          <input type="number" min="0" value={i.discount||''} placeholder="0"
+                            onChange={e=>updateDisc(i.medicineId,e.target.value)}
+                            className="w-14 text-right border rounded px-1 py-0.5 text-[11px]"/>
+                        </div>
                       </td>
-                      <td className="px-2 py-2">
-                        <div className="flex items-center justify-center gap-1">
-                          <button onClick={()=>updateQty(i.medicineId,i.quantity-1)} className="w-7 h-7 rounded-md bg-gray-100 hover:bg-gray-200 flex items-center justify-center">
-                            <HiOutlineMinus className="w-3.5 h-3.5"/>
+                      <td className="px-1 py-2">
+                        <div className="flex items-center justify-center gap-0.5">
+                          <button onClick={()=>updateQty(i.medicineId,i.quantity-1)} className="w-6 h-6 rounded-md bg-gray-100 hover:bg-gray-200 flex items-center justify-center">
+                            <HiOutlineMinus className="w-3 h-3"/>
                           </button>
                           <input type="number" min="1" value={i.quantity}
                             onChange={e=>updateQty(i.medicineId,parseInt(e.target.value)||1)}
-                            className="w-12 text-center border rounded-md py-1 text-sm font-bold"/>
-                          <button onClick={()=>updateQty(i.medicineId,i.quantity+1)} className="w-7 h-7 rounded-md bg-gray-100 hover:bg-gray-200 flex items-center justify-center">
-                            <HiOutlinePlus className="w-3.5 h-3.5"/>
+                            className="w-10 text-center border rounded-md py-0.5 text-xs font-bold"/>
+                          <button onClick={()=>updateQty(i.medicineId,i.quantity+1)} className="w-6 h-6 rounded-md bg-gray-100 hover:bg-gray-200 flex items-center justify-center">
+                            <HiOutlinePlus className="w-3 h-3"/>
                           </button>
                         </div>
                       </td>
-                      <td className="px-2 py-2 text-right text-gray-700 hidden sm:table-cell">{formatCurrency(i.unitPrice)}</td>
-                      <td className="px-2 py-2 text-right hidden md:table-cell">
-                        <input type="number" min="0" value={i.discount||''} placeholder="0"
-                          onChange={e=>updateDisc(i.medicineId,e.target.value)}
-                          className="w-16 text-right border rounded-md px-1.5 py-1 text-sm"/>
-                      </td>
                       <td className="px-2 py-2 text-right font-bold text-primary-700 text-sm">{formatCurrency(i.lineTotal)}</td>
                       <td className="text-center">
-                        <button onClick={()=>removeItem(i.medicineId)} className="p-1.5 hover:bg-red-50 rounded-md">
-                          <HiOutlineTrash className="w-4 h-4 text-red-500"/>
+                        <button onClick={()=>removeItem(i.medicineId)} className="p-1 hover:bg-red-50 rounded-md">
+                          <HiOutlineTrash className="w-3.5 h-3.5 text-red-500"/>
                         </button>
                       </td>
                     </tr>
@@ -515,7 +526,9 @@ export default function POSTerminal() {
             </div>
           )}
         </div>
-        <div className="w-full lg:flex-[40] flex flex-col bg-gray-50 lg:overflow-y-auto">
+
+        {/* ─── SECTION 3: CUSTOMER + TOTAL + PAYMENT (mobile 50%, lg 25%) ─ */}
+        <div className="w-1/2 lg:w-auto lg:flex-[25] flex flex-col bg-gray-50 lg:overflow-y-auto">
           <div className="p-3 bg-white border-b">
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Customer</label>
@@ -618,6 +631,8 @@ export default function POSTerminal() {
               {processing?'Processing...':'✓ Complete — '+formatCurrency(net)}
             </button>
           </div>
+        </div>
+
         </div>
       </div>
       {showHeld&&<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={()=>setShowHeld(false)}><div className="bg-white rounded-2xl w-full max-w-lg max-h-[70vh] overflow-hidden" onClick={e=>e.stopPropagation()}><div className="px-5 py-3 border-b flex justify-between"><h3 className="font-heading font-bold">Held({heldBills.length})</h3><button onClick={()=>setShowHeld(false)}><HiOutlineX className="w-5 h-5"/></button></div><div className="overflow-y-auto max-h-[55vh] divide-y">{heldBills.map(h=><div key={h._id} className="px-5 py-3 flex items-center gap-3 hover:bg-gray-50"><div className="flex-1"><p className="font-medium text-sm">{h.customerName||'Walk-in'}</p><p className="text-xs text-gray-400">{h.items?.length} items • {formatCurrency(h.subtotal)}</p></div><button onClick={()=>resumeBill(h._id)} className="btn-primary text-xs px-3 py-1">Resume</button><button onClick={async()=>{await API.delete(`/sales/held/${h._id}`);fetchHeldBills();}} className="p-1 hover:bg-red-50 rounded"><HiOutlineTrash className="w-4 h-4 text-red-400"/></button></div>)}</div></div></div>}
