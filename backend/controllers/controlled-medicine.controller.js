@@ -1,5 +1,7 @@
 const { asyncHandler } = require('../utils/errorHandler');
 const ControlledMedicine = require('../models/ControlledMedicine');
+const ControlledStockAdjustment = require('../models/ControlledStockAdjustment');
+const ADJUSTMENT_REASONS = ControlledStockAdjustment.REASONS;
 
 // All routes mounted under /api/controlled and gated by `requireUnlocked`,
 // so by the time we get here:
@@ -145,10 +147,11 @@ exports.addBatch = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: item });
 });
 
-// @desc    Edit an existing batch's quantity / prices / expiry. Quantity edits
-//          are allowed only if no sale has consumed from this batch (Phase 4
-//          will enforce; for Phase 2 we trust the caller). Useful for fixing
-//          data-entry errors on stock-in.
+// @desc    Edit non-quantity batch fields (batch #, expiry, prices, source).
+//          QUANTITY is intentionally NOT editable here — for regulated
+//          drugs every quantity change must go through `adjustBatch` so a
+//          reason + audit row are recorded. This route is only for fixing
+//          typos in batch metadata.
 // @route   PUT /api/controlled/medicines/:id/batches/:batchId
 exports.updateBatch = asyncHandler(async (req, res) => {
   const item = await ControlledMedicine.findOne({ _id: req.params.id, ...scope(req) });
@@ -157,7 +160,8 @@ exports.updateBatch = asyncHandler(async (req, res) => {
   const batch = item.batches.id(req.params.batchId);
   if (!batch) return res.status(404).json({ success: false, message: 'Batch not found' });
 
-  const editable = ['batchNumber', 'expiryDate', 'quantity', 'costPrice', 'mrp', 'salePrice', 'source'];
+  // Whitelist — note `quantity` deliberately omitted.
+  const editable = ['batchNumber', 'expiryDate', 'costPrice', 'mrp', 'salePrice', 'source'];
   for (const k of editable) {
     if (k in (req.body || {})) {
       batch[k] = k === 'expiryDate' ? new Date(req.body[k]) : req.body[k];
@@ -165,6 +169,82 @@ exports.updateBatch = asyncHandler(async (req, res) => {
   }
   await item.save();
   res.json({ success: true, data: item });
+});
+
+// @desc    Adjust a batch's stock quantity with a mandatory reason. Writes
+//          an immutable audit row in ControlledStockAdjustment.
+// @route   POST /api/controlled/medicines/:id/batches/:batchId/adjust
+//          body: { newQuantity, reason, notes? }
+exports.adjustBatch = asyncHandler(async (req, res) => {
+  const { newQuantity, reason, notes } = req.body || {};
+
+  if (newQuantity === undefined || newQuantity === null || newQuantity === '') {
+    return res.status(400).json({ success: false, message: 'newQuantity is required' });
+  }
+  const newQty = Number(newQuantity);
+  if (!Number.isFinite(newQty) || newQty < 0) {
+    return res.status(400).json({ success: false, message: 'newQuantity must be a non-negative number' });
+  }
+  if (!reason || !ADJUSTMENT_REASONS.includes(reason)) {
+    return res.status(400).json({
+      success: false,
+      message: `reason is required and must be one of: ${ADJUSTMENT_REASONS.join(', ')}`,
+    });
+  }
+  // "Other" without a note is too vague for an audit trail.
+  if (reason === 'other' && !notes?.trim()) {
+    return res.status(400).json({ success: false, message: 'Notes are required when reason is "other"' });
+  }
+
+  const item = await ControlledMedicine.findOne({ _id: req.params.id, ...scope(req) });
+  if (!item) return res.status(404).json({ success: false, message: 'Not found' });
+
+  const batch = item.batches.id(req.params.batchId);
+  if (!batch) return res.status(404).json({ success: false, message: 'Batch not found' });
+
+  const previousQuantity = Number(batch.quantity) || 0;
+  const delta = newQty - previousQuantity;
+  if (delta === 0) {
+    return res.status(400).json({ success: false, message: 'New quantity is identical to the current quantity' });
+  }
+
+  // Apply the change atomically — write the adjustment row first so even if
+  // the medicine save fails we still have evidence of the attempt. We then
+  // mutate the batch and save the medicine.
+  await ControlledStockAdjustment.create({
+    ...scope(req),
+    medicineId: item._id,
+    batchId: batch._id,
+    medicineName: item.medicineName,
+    schedule: item.schedule,
+    batchNumber: batch.batchNumber,
+    previousQuantity,
+    newQuantity: newQty,
+    delta,
+    reason,
+    notes: notes?.trim() || '',
+    adjustedBy: req.user._id,
+    adjustedByName: req.user.name,
+    adjustedByRole: req.user.role,
+  });
+
+  batch.quantity = newQty;
+  await item.save();   // recomputes currentStock
+
+  res.json({ success: true, data: item });
+});
+
+// @desc    List adjustment history for one medicine (newest first).
+// @route   GET /api/controlled/medicines/:id/adjustments
+exports.listAdjustments = asyncHandler(async (req, res) => {
+  const adjustments = await ControlledStockAdjustment.find({
+    medicineId: req.params.id,
+    ...scope(req),
+  })
+    .sort({ createdAt: -1 })
+    .limit(100)
+    .lean();
+  res.json({ success: true, data: adjustments });
 });
 
 // @desc    Remove a batch entirely. Use with caution — this is a hard delete

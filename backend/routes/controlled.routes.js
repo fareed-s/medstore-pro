@@ -32,6 +32,8 @@ router.delete('/medicines/:id',                     requireUnlocked, med.softDel
 router.post  ('/medicines/:id/batches',             requireUnlocked, med.addBatch);
 router.put   ('/medicines/:id/batches/:batchId',    requireUnlocked, med.updateBatch);
 router.delete('/medicines/:id/batches/:batchId',    requireUnlocked, med.removeBatch);
+router.post  ('/medicines/:id/batches/:batchId/adjust', requireUnlocked, med.adjustBatch);
+router.get   ('/medicines/:id/adjustments',         requireUnlocked, med.listAdjustments);
 
 // ─── Sales (Phase 3) ──────────────────────────────────────────────────────
 const sale = require('../controllers/controlled-sale.controller');

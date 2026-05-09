@@ -14,10 +14,24 @@ import { toast } from 'react-toastify';
 import {
   HiOutlineArrowLeft, HiOutlineCheck, HiOutlinePlus, HiOutlineTrash,
   HiOutlinePencilAlt, HiOutlineX, HiOutlineExclamationCircle,
+  HiOutlineScale, HiOutlineClipboardList,
 } from 'react-icons/hi';
 import { controlledApi } from '../../context/ControlledModuleContext';
-import { apiError, formatCurrency, formatDate } from '../../utils/helpers';
+import { apiError, formatCurrency, formatDate, formatDateTime } from '../../utils/helpers';
 import { confirmDanger } from '../../utils/swal';
+
+// Reasons mirror the server-side enum. Keep labels short — they go into a dropdown.
+const ADJUSTMENT_REASONS = [
+  { value: 'damage',             label: 'Damage / Breakage' },
+  { value: 'expiry',             label: 'Expiry write-off' },
+  { value: 'theft',              label: 'Theft / Loss' },
+  { value: 'data-correction',    label: 'Data-entry correction' },
+  { value: 'inventory-count',    label: 'Physical count adjustment' },
+  { value: 'return-to-supplier', label: 'Returned to supplier' },
+  { value: 'dispensary-use',     label: 'Internal dispensary use' },
+  { value: 'other',              label: 'Other (notes required)' },
+];
+const REASON_LABEL = Object.fromEntries(ADJUSTMENT_REASONS.map((r) => [r.value, r.label]));
 
 const SCHEDULES = ['Schedule-H', 'Schedule-H1', 'Schedule-X'];
 const CATEGORIES = ['Tablet', 'Capsule', 'Syrup', 'Injection', 'Solution', 'Drops', 'Patch', 'Other'];
@@ -269,6 +283,7 @@ export default function ControlledMedicineFormPage() {
 function BatchesPanel({ item, onChange }) {
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [adjustingBatch, setAdjustingBatch] = useState(null);    // full batch object
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState(blankBatch());
 
@@ -284,10 +299,12 @@ function BatchesPanel({ item, onChange }) {
   };
 
   const startEdit = (b) => {
+    // Note: quantity is intentionally NOT loaded into the edit form. Stock
+    // changes go through the Adjust modal so a reason gets recorded.
     setForm({
       batchNumber: b.batchNumber,
       expiryDate: b.expiryDate?.slice(0, 10) || '',
-      quantity: b.quantity,
+      quantity: b.quantity,           // kept for the inline read-only display below
       costPrice: b.costPrice,
       mrp: b.mrp,
       salePrice: b.salePrice,
@@ -301,19 +318,29 @@ function BatchesPanel({ item, onChange }) {
 
   const saveBatch = async (e) => {
     e?.preventDefault?.();
-    if (!form.batchNumber || !form.expiryDate || form.quantity === '' || form.quantity === null) {
-      toast.error('Batch number, expiry, and quantity are required');
+    if (!form.batchNumber || !form.expiryDate) {
+      toast.error('Batch number and expiry are required');
+      return;
+    }
+    // Adding a fresh batch still needs a starting quantity — that's not an
+    // adjustment, it's the initial stock-in.
+    if (adding && (form.quantity === '' || form.quantity === null)) {
+      toast.error('Quantity is required when adding a new batch');
       return;
     }
     setBusy(true);
     try {
       const payload = {
-        ...form,
-        quantity: Number(form.quantity),
+        batchNumber: form.batchNumber,
+        expiryDate: form.expiryDate,
         costPrice: form.costPrice === '' ? undefined : Number(form.costPrice),
         mrp: form.mrp === '' ? undefined : Number(form.mrp),
         salePrice: form.salePrice === '' ? undefined : Number(form.salePrice),
+        source: form.source,
       };
+      // Quantity is only sent when CREATING a batch — not on update.
+      if (adding) payload.quantity = Number(form.quantity);
+
       const { data } = editingId
         ? await controlledApi.put(`/medicines/${item._id}/batches/${editingId}`, payload)
         : await controlledApi.post(`/medicines/${item._id}/batches`, payload);
@@ -372,9 +399,19 @@ function BatchesPanel({ item, onChange }) {
           <Field label="Expiry Date" required>
             <Input type="date" value={form.expiryDate} onChange={(v) => setForm({ ...form, expiryDate: v })} />
           </Field>
-          <Field label="Quantity" required>
-            <Input type="number" min={0} value={form.quantity} onChange={(v) => setForm({ ...form, quantity: v })} />
-          </Field>
+          {adding ? (
+            <Field label="Quantity" required>
+              <Input type="number" min={0} value={form.quantity} onChange={(v) => setForm({ ...form, quantity: v })} />
+            </Field>
+          ) : (
+            // On edit, quantity is read-only — direct edits would skip the
+            // audit trail. Operator must use the Adjust button instead.
+            <Field label="Quantity" hint="use Adjust to change">
+              <div className="px-2.5 py-1.5 rounded-md bg-gray-900 border border-gray-800 text-gray-500 text-sm font-mono">
+                {form.quantity}
+              </div>
+            </Field>
+          )}
           <Field label="Cost Price">
             <Input type="number" step="0.01" min={0} value={form.costPrice} onChange={(v) => setForm({ ...form, costPrice: v })} />
           </Field>
@@ -432,10 +469,17 @@ function BatchesPanel({ item, onChange }) {
                   <td className="px-4 py-2.5 text-right text-gray-100 font-mono">{formatCurrency(b.salePrice)}</td>
                   <td className="px-4 py-2.5">
                     <div className="flex justify-end gap-1">
-                      <button onClick={() => startEdit(b)} className="p-1.5 rounded hover:bg-blue-500/15 text-blue-400">
+                      <button
+                        onClick={() => setAdjustingBatch(b)}
+                        title="Adjust stock (logged with reason)"
+                        className="p-1.5 rounded hover:bg-amber-500/15 text-amber-400"
+                      >
+                        <HiOutlineScale className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => startEdit(b)} title="Edit batch details" className="p-1.5 rounded hover:bg-blue-500/15 text-blue-400">
                         <HiOutlinePencilAlt className="w-4 h-4" />
                       </button>
-                      <button onClick={() => removeBatch(b)} className="p-1.5 rounded hover:bg-red-500/15 text-red-400">
+                      <button onClick={() => removeBatch(b)} title="Remove batch" className="p-1.5 rounded hover:bg-red-500/15 text-red-400">
                         <HiOutlineTrash className="w-4 h-4" />
                       </button>
                     </div>
@@ -445,6 +489,209 @@ function BatchesPanel({ item, onChange }) {
             })}
           </tbody>
         </table>
+      )}
+
+      {adjustingBatch && (
+        <AdjustStockModal
+          item={item}
+          batch={adjustingBatch}
+          onClose={() => setAdjustingBatch(null)}
+          onSaved={(updated) => { onChange(updated); setAdjustingBatch(null); }}
+        />
+      )}
+
+      <AdjustmentHistory medicineId={item._id} refreshKey={item.currentStock} />
+    </div>
+  );
+}
+
+// ─── Adjust Stock Modal ─────────────────────────────────────────────────────
+// Strict, regulator-friendly stock change. New quantity (NOT delta), reason
+// dropdown required, notes mandatory for "other". Shows before/after at a
+// glance so the operator can sanity-check.
+function AdjustStockModal({ item, batch, onClose, onSaved }) {
+  const current = Number(batch.quantity) || 0;
+  const [newQty, setNewQty] = useState(String(current));
+  const [reason, setReason] = useState('');
+  const [notes, setNotes] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const parsedNew = newQty === '' ? null : Number(newQty);
+  const delta = parsedNew !== null && Number.isFinite(parsedNew) ? parsedNew - current : 0;
+  const valid = parsedNew !== null && Number.isFinite(parsedNew) && parsedNew >= 0 && delta !== 0 && reason
+    && (reason !== 'other' || notes.trim().length > 0);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!valid) return;
+    setBusy(true);
+    try {
+      const { data } = await controlledApi.post(
+        `/medicines/${item._id}/batches/${batch._id}/adjust`,
+        { newQuantity: parsedNew, reason, notes }
+      );
+      toast.success('Stock adjusted · audit row recorded');
+      onSaved(data.data);
+    } catch (err) {
+      toast.error(apiError(err, 'Adjustment failed'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm flex items-start sm:items-center justify-center p-3 sm:p-4 overflow-y-auto" onClick={onClose}>
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md my-4 sm:my-8 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="px-4 py-3 border-b border-gray-800 flex items-center gap-2">
+          <HiOutlineScale className="w-5 h-5 text-amber-400" />
+          <div className="flex-1 min-w-0">
+            <p className="font-heading font-bold text-white">Adjust Stock</p>
+            <p className="text-[11px] text-gray-400 truncate">{item.medicineName} · Batch {batch.batchNumber}</p>
+          </div>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-white"><HiOutlineX className="w-5 h-5" /></button>
+        </div>
+
+        <form onSubmit={submit} className="p-4 space-y-4">
+          {/* Before / Δ / After preview */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-gray-950 border border-gray-800 rounded-lg p-2 text-center">
+              <p className="text-[10px] uppercase tracking-wider text-gray-500">Current</p>
+              <p className="text-xl font-mono font-bold text-gray-200">{current}</p>
+            </div>
+            <div className="bg-gray-950 border border-gray-800 rounded-lg p-2 text-center">
+              <p className="text-[10px] uppercase tracking-wider text-gray-500">Change</p>
+              <p className={`text-xl font-mono font-bold ${delta > 0 ? 'text-emerald-400' : delta < 0 ? 'text-red-400' : 'text-gray-500'}`}>
+                {delta > 0 ? '+' : ''}{delta}
+              </p>
+            </div>
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-2 text-center">
+              <p className="text-[10px] uppercase tracking-wider text-amber-400/80">New</p>
+              <p className="text-xl font-mono font-bold text-amber-200">
+                {parsedNew !== null && Number.isFinite(parsedNew) ? parsedNew : '—'}
+              </p>
+            </div>
+          </div>
+
+          <Field label="New Quantity" required>
+            <Input type="number" min={0} value={newQty} onChange={setNewQty} autoFocus />
+          </Field>
+
+          <Field label="Reason" required>
+            <select
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className="w-full px-2.5 py-1.5 rounded-md bg-gray-950 border border-gray-800 text-gray-100 text-sm focus:outline-none focus:border-amber-500/50"
+              required
+            >
+              <option value="">— select reason —</option>
+              {ADJUSTMENT_REASONS.map((r) => (
+                <option key={r.value} value={r.value}>{r.label}</option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label={`Notes${reason === 'other' ? ' (required)' : ' (optional)'}`}>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              className="w-full px-2.5 py-1.5 rounded-md bg-gray-950 border border-gray-800 text-gray-100 placeholder-gray-500 text-sm focus:outline-none focus:border-amber-500/50"
+              placeholder="e.g. invoice no. / counter-signed by …"
+            />
+          </Field>
+
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-2 text-[11px] text-amber-200/90 flex items-start gap-2">
+            <HiOutlineClipboardList className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <span>This change is permanent and recorded in the audit log with your name, the reason, and the timestamp. It cannot be edited later.</span>
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <button type="button" onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 text-sm border border-gray-700">
+              Cancel
+            </button>
+            <button type="submit" disabled={!valid || busy} className="flex-1 px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed text-white text-sm font-medium flex items-center justify-center gap-1.5">
+              <HiOutlineCheck className="w-4 h-4" /> {busy ? 'Recording…' : 'Record Adjustment'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Adjustment History — collapsible audit feed for THIS medicine ──────────
+function AdjustmentHistory({ medicineId, refreshKey }) {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  // Refetch when:
+  //  • panel is opened
+  //  • parent stock changed (refreshKey) — implies a new adjustment may exist
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoading(true);
+    controlledApi.get(`/medicines/${medicineId}/adjustments`)
+      .then((r) => { if (!cancelled) setRows(r.data.data); })
+      .catch(() => {})
+      .finally(() => !cancelled && setLoading(false));
+    return () => { cancelled = true; };
+  }, [open, medicineId, refreshKey]);
+
+  return (
+    <div className="border-t border-gray-800">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full px-4 py-2.5 flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-gray-400 hover:text-gray-200 hover:bg-gray-800/40"
+      >
+        <span className="flex items-center gap-2">
+          <HiOutlineClipboardList className="w-4 h-4" />
+          Stock Adjustment History
+        </span>
+        <span>{open ? '−' : '+'}</span>
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4">
+          {loading ? (
+            <p className="text-center text-xs text-gray-500 py-4">Loading…</p>
+          ) : rows.length === 0 ? (
+            <p className="text-center text-xs text-gray-500 py-4">No adjustments recorded.</p>
+          ) : (
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-[10px] uppercase tracking-wider text-gray-500 border-b border-gray-800">
+                  <th className="py-1.5">Date</th>
+                  <th className="py-1.5">Batch</th>
+                  <th className="py-1.5">Reason</th>
+                  <th className="py-1.5 text-right">Was</th>
+                  <th className="py-1.5 text-right">Δ</th>
+                  <th className="py-1.5 text-right">Now</th>
+                  <th className="py-1.5">By</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800/60">
+                {rows.map((r) => (
+                  <tr key={r._id}>
+                    <td className="py-1.5 text-gray-400 whitespace-nowrap">{formatDateTime(r.createdAt)}</td>
+                    <td className="py-1.5 font-mono text-gray-300">{r.batchNumber}</td>
+                    <td className="py-1.5 text-gray-200">
+                      {REASON_LABEL[r.reason] || r.reason}
+                      {r.notes && <p className="text-[10px] text-gray-500 italic">{r.notes}</p>}
+                    </td>
+                    <td className="py-1.5 text-right font-mono text-gray-400">{r.previousQuantity}</td>
+                    <td className={`py-1.5 text-right font-mono ${r.delta > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {r.delta > 0 ? '+' : ''}{r.delta}
+                    </td>
+                    <td className="py-1.5 text-right font-mono text-gray-100">{r.newQuantity}</td>
+                    <td className="py-1.5 text-gray-300">{r.adjustedByName}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       )}
     </div>
   );
