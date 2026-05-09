@@ -7,6 +7,7 @@ const GRN = require('../models/GRN');
 const Expense = require('../models/Expense');
 const Customer = require('../models/Customer');
 const Supplier = require('../models/Supplier');
+const SupplierPayment = require('../models/SupplierPayment');
 const ControlledDrugRegister = require('../models/ControlledDrugRegister');
 const User = require('../models/User');
 const { asyncHandler } = require('../utils/errorHandler');
@@ -277,12 +278,118 @@ exports.getReportsList = asyncHandler(async (req, res) => {
     ]},
     { group: 'Financial', items: [
       { key: 'cash-flow', name: 'Cash Flow', desc: 'Cash in vs cash out' },
+      { key: 'aging', name: 'Aging Report', desc: 'Receivables + payables by age' },
     ]},
     { group: 'Regulatory', items: [
       { key: 'controlled-drugs', name: 'Controlled Drug Register', desc: 'H/H1/X drug log' },
     ]},
   ];
   res.json({ success: true, data: reports });
+});
+
+// ─── AGING REPORT ─────────────────────────────────────────────────────────
+// Receivables (customers owe us) bucketed by age of each unpaid sale.
+// Payables (we owe suppliers) bucketed by age of each GRN with FIFO payment
+// allocation — payments are NOT tied to specific GRNs, so we apply the
+// supplier's total payments to oldest GRNs first and bucket what's left.
+//
+// Buckets: 0-30, 31-60, 61-90, 90+ days.
+exports.agingReport = asyncHandler(async (req, res) => {
+  const sid = getSid(req.user.storeId);
+  const today = Date.now();
+  const ageBucket = (createdAt) => {
+    const days = Math.floor((today - new Date(createdAt).getTime()) / 86400000);
+    return { days, bucket: days <= 30 ? '0-30' : days <= 60 ? '31-60' : days <= 90 ? '61-90' : '90+' };
+  };
+  const emptyBuckets = () => ({ '0-30': 0, '31-60': 0, '61-90': 0, '90+': 0 });
+
+  // ── Receivables: per-sale balanceDue is authoritative ──────────────────
+  const sales = await Sale.find({
+    storeId: sid,
+    status: { $in: ['completed', 'partial_return'] },
+    balanceDue: { $gt: 0 },
+  }).select('customerId customerName balanceDue createdAt invoiceNo').sort({ createdAt: 1 }).lean();
+
+  const recMap = new Map();
+  for (const s of sales) {
+    const key = String(s.customerId || s.customerName || 'walk-in');
+    if (!recMap.has(key)) {
+      recMap.set(key, {
+        customerId: s.customerId || null,
+        customerName: s.customerName || 'Walk-in',
+        buckets: emptyBuckets(),
+        total: 0, oldestDays: 0, invoiceCount: 0,
+      });
+    }
+    const r = recMap.get(key);
+    const { days, bucket } = ageBucket(s.createdAt);
+    r.buckets[bucket] += s.balanceDue;
+    r.total += s.balanceDue;
+    r.invoiceCount++;
+    if (days > r.oldestDays) r.oldestDays = days;
+  }
+
+  // ── Payables: GRNs by supplier, FIFO-apply supplier payments ───────────
+  const [grns, payments] = await Promise.all([
+    GRN.find({ storeId: sid }).select('supplierId supplierName totalCost createdAt grnNumber').sort({ createdAt: 1 }).lean(),
+    SupplierPayment.find({ storeId: sid, status: { $ne: 'cancelled' } }).select('supplierId amount').lean(),
+  ]);
+
+  const paidBySupplier = new Map();
+  for (const p of payments) {
+    const k = String(p.supplierId);
+    paidBySupplier.set(k, (paidBySupplier.get(k) || 0) + (p.amount || 0));
+  }
+
+  const grnsBySupplier = new Map();
+  for (const g of grns) {
+    const k = String(g.supplierId);
+    if (!grnsBySupplier.has(k)) grnsBySupplier.set(k, []);
+    grnsBySupplier.get(k).push(g);
+  }
+
+  const payMap = new Map();
+  for (const [supplierId, list] of grnsBySupplier) {
+    let remainingPaid = paidBySupplier.get(supplierId) || 0;
+    const row = {
+      supplierId,
+      supplierName: list[0].supplierName,
+      buckets: emptyBuckets(),
+      total: 0, oldestDays: 0, grnCount: 0,
+    };
+    for (const g of list) {
+      let unpaid = Number(g.totalCost) || 0;
+      if (remainingPaid >= unpaid) { remainingPaid -= unpaid; continue; }
+      unpaid -= remainingPaid; remainingPaid = 0;
+      const { days, bucket } = ageBucket(g.createdAt);
+      row.buckets[bucket] += unpaid;
+      row.total += unpaid;
+      row.grnCount++;
+      if (days > row.oldestDays) row.oldestDays = days;
+    }
+    if (row.total > 0) payMap.set(supplierId, row);
+  }
+
+  const receivables = [...recMap.values()].filter((r) => r.total > 0).sort((a, b) => b.total - a.total);
+  const payables = [...payMap.values()].sort((a, b) => b.total - a.total);
+
+  const sumBuckets = (rows) => rows.reduce((acc, r) => {
+    acc.total += r.total;
+    for (const b of Object.keys(r.buckets)) acc.buckets[b] += r.buckets[b];
+    return acc;
+  }, { total: 0, buckets: emptyBuckets() });
+
+  res.json({
+    success: true,
+    data: {
+      receivables,
+      payables,
+      totals: {
+        receivables: sumBuckets(receivables),
+        payables:    sumBuckets(payables),
+      },
+    },
+  });
 });
 
 // Sales by Doctor

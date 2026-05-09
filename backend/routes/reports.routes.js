@@ -24,5 +24,6 @@ router.get('/product-profitability', ctrl.productProfitability);
 router.get('/cash-flow', ctrl.cashFlowReport);
 router.get('/expiry-loss', ctrl.expiryLossReport);
 router.get('/sales-by-doctor', ctrl.salesByDoctor);
+router.get('/aging', ctrl.agingReport);
 
 module.exports = router;

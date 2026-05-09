@@ -38,6 +38,7 @@ import ControlledDrugRegisterPage from './pages/regulatory/ControlledDrugRegiste
 import DrugLicensesPage from './pages/regulatory/DrugLicensesPage';
 import ExpiryDestructionPage from './pages/regulatory/ExpiryDestructionPage';
 import ReportsPage from './pages/reports/ReportsPage';
+import AgingReportPage from './pages/reports/AgingReportPage';
 import NotificationsPage from './pages/settings/NotificationsPage';
 import ReceiptDesignerPage from './pages/settings/ReceiptDesignerPage';
 import ActivityLogPage from './pages/settings/ActivityLogPage';
@@ -156,6 +157,7 @@ export default function App() {
         <Route path="regulatory/licenses" element={<DrugLicensesPage />} />
         <Route path="regulatory/destruction" element={<ProtectedRoute roles={['SuperAdmin','StoreAdmin']}><ExpiryDestructionPage /></ProtectedRoute>} />
         <Route path="reports" element={<ProtectedRoute roles={['SuperAdmin','StoreAdmin']}><ReportsPage /></ProtectedRoute>} />
+        <Route path="reports/aging" element={<ProtectedRoute roles={['SuperAdmin','StoreAdmin']}><AgingReportPage /></ProtectedRoute>} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="receipt-designer" element={<ProtectedRoute roles={['SuperAdmin','StoreAdmin']}><ReceiptDesignerPage /></ProtectedRoute>} />
         <Route path="activity-log" element={<ProtectedRoute roles={['SuperAdmin','StoreAdmin']}><ActivityLogPage /></ProtectedRoute>} />

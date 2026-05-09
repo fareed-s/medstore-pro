@@ -6,6 +6,7 @@ import { formatCurrency } from '../../utils/helpers';
 import { toast } from 'react-toastify';
 import { confirmDanger } from '../../utils/swal';
 import { HiOutlineSearch, HiOutlineTrash, HiOutlinePlus, HiOutlineMinus, HiOutlinePause, HiOutlinePlay, HiOutlineX, HiOutlinePrinter, HiOutlineExclamation, HiOutlineSwitchHorizontal, HiOutlineStatusOffline } from 'react-icons/hi';
+import { FaWhatsapp } from 'react-icons/fa';
 import { useOffline } from '../../offline/OfflineContext';
 import { getCachedMedicines, getCachedCustomers, decrementCachedStock } from '../../offline/db';
 
@@ -311,6 +312,51 @@ export default function POSTerminal() {
     }finally{setProcessing(false);}
   };
 
+  // Build a WhatsApp-friendly plain-text receipt. WhatsApp renders *text*
+  // as bold so we use that for headings and totals. Keep lines short —
+  // long items wrap awkwardly on phone screens.
+  const buildWhatsAppText = () => {
+    if (!lastSale) return '';
+    const lines = [
+      `🏥 *${storeInfo?.storeName || 'MedStore Pro'}*`,
+      storeInfo?.phone ? `📞 ${storeInfo.phone}` : '',
+      '',
+      `Invoice: *${lastSale.invoiceNo}*`,
+      `Date: ${new Date(lastSale.createdAt).toLocaleString()}`,
+      `Customer: ${lastSale.customerName}`,
+      '',
+      '────────────────',
+      ...lastSale.items.map((it) =>
+        `• ${it.medicineName}\n   ${it.quantity} × ${formatCurrency(it.unitPrice || it.lineTotal / it.quantity)} = *${formatCurrency(it.lineTotal)}*`
+      ),
+      '────────────────',
+      '',
+      `*TOTAL: ${formatCurrency(lastSale.netTotal)}*`,
+      lastSale.totalPaid ? `Paid: ${formatCurrency(lastSale.totalPaid)}` : '',
+      lastSale.changeGiven > 0 ? `Change: ${formatCurrency(lastSale.changeGiven)}` : '',
+      '',
+      storeInfo?.settings?.receiptFooter || 'Thank you for your purchase!',
+    ].filter(Boolean);
+    return lines.join('\n');
+  };
+
+  // Open the customer's WhatsApp with the receipt prefilled. Falls back to
+  // a prompt if the sale didn't capture a phone (Walk-in customer).
+  const shareWhatsApp = () => {
+    let raw = (lastSale?.customerPhone || customerPhone || '').toString();
+    let phone = raw.replace(/\D/g, '');
+    if (!phone || phone.length < 7) {
+      const ask = window.prompt('Customer WhatsApp number (with country code, e.g. 923001234567):');
+      if (!ask) return;
+      phone = ask.replace(/\D/g, '');
+      if (phone.length < 7) { toast.error('Invalid phone number'); return; }
+    }
+    // Pakistani local format (03xxxxxxxxx) → strip leading 0 + add 92.
+    if (phone.startsWith('0') && phone.length === 11) phone = '92' + phone.slice(1);
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(buildWhatsAppText())}`;
+    window.open(url, '_blank', 'noopener');
+  };
+
   const printReceipt=()=>{
     const w=window.open('','_blank','width=350,height=600');
     const rw=storeInfo?.settings?.receiptWidth==='58mm'?'58mm':'80mm';
@@ -577,7 +623,7 @@ export default function POSTerminal() {
       {showHeld&&<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={()=>setShowHeld(false)}><div className="bg-white rounded-2xl w-full max-w-lg max-h-[70vh] overflow-hidden" onClick={e=>e.stopPropagation()}><div className="px-5 py-3 border-b flex justify-between"><h3 className="font-heading font-bold">Held({heldBills.length})</h3><button onClick={()=>setShowHeld(false)}><HiOutlineX className="w-5 h-5"/></button></div><div className="overflow-y-auto max-h-[55vh] divide-y">{heldBills.map(h=><div key={h._id} className="px-5 py-3 flex items-center gap-3 hover:bg-gray-50"><div className="flex-1"><p className="font-medium text-sm">{h.customerName||'Walk-in'}</p><p className="text-xs text-gray-400">{h.items?.length} items • {formatCurrency(h.subtotal)}</p></div><button onClick={()=>resumeBill(h._id)} className="btn-primary text-xs px-3 py-1">Resume</button><button onClick={async()=>{await API.delete(`/sales/held/${h._id}`);fetchHeldBills();}} className="p-1 hover:bg-red-50 rounded"><HiOutlineTrash className="w-4 h-4 text-red-400"/></button></div>)}</div></div></div>}
       {showInteractions&&interactions&&<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={()=>setShowInteractions(false)}><div className="bg-white rounded-2xl w-full max-w-lg max-h-[80vh] overflow-hidden" onClick={e=>e.stopPropagation()}><div className="px-5 py-3 border-b bg-red-50 flex justify-between"><h3 className="font-heading font-bold text-red-800 flex items-center gap-2"><HiOutlineExclamation className="w-5 h-5"/>Drug Interaction Alert</h3><button onClick={()=>setShowInteractions(false)}><HiOutlineX className="w-5 h-5"/></button></div><div className="overflow-y-auto max-h-[60vh] p-4 space-y-2">{interactions.interactions?.map((int,i)=><div key={i} className={`p-3 rounded-xl border ${int.severity==='contraindicated'?'bg-red-50 border-red-200':int.severity==='major'?'bg-orange-50 border-orange-200':'bg-amber-50 border-amber-200'}`}><span className={`badge text-[10px] ${int.severity==='contraindicated'?'badge-red':'badge-amber'}`}>{int.severity}</span><span className="text-xs font-bold ml-2">{int.drug1} ↔ {int.drug2}</span><p className="text-xs text-gray-700 mt-1">{int.description}</p>{int.management&&<p className="text-[10px] text-gray-500 mt-1">Mgmt: {int.management}</p>}</div>)}{interactions.allergyAlerts?.map((a,i)=><div key={'a'+i} className="p-3 rounded-xl bg-red-50 border border-red-300"><span className="badge badge-red text-[10px]">ALLERGY</span><p className="text-xs font-bold mt-1">{a.message}</p></div>)}{interactions.conditionAlerts?.map((c,i)=><div key={'c'+i} className="p-3 rounded-xl bg-amber-50 border border-amber-200"><span className="badge badge-amber text-[10px]">CONDITION</span><p className="text-xs mt-1">{c.message}</p></div>)}</div><div className="p-3 border-t flex gap-2"><button onClick={()=>setShowInteractions(false)} className="btn-secondary flex-1 text-sm">Override</button><button onClick={()=>{setShowInteractions(false);clearCart();}} className="btn-danger flex-1 text-sm">Clear Cart</button></div></div></div>}
       {showSubs&&<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={()=>setShowSubs(false)}><div className="bg-white rounded-2xl w-full max-w-md" onClick={e=>e.stopPropagation()}><div className="px-5 py-3 border-b flex justify-between"><h3 className="font-heading font-bold text-sm flex items-center gap-2"><HiOutlineSwitchHorizontal className="w-4 h-4 text-blue-500"/>Out of Stock — Generics</h3><button onClick={()=>setShowSubs(false)}><HiOutlineX className="w-5 h-5"/></button></div><div className="p-3"><p className="text-xs text-gray-500 mb-3"><b>{subFor?.medicineName}</b> out of stock. Same composition:</p>{substitutes.map(s=><button key={s._id} onClick={()=>{addToCart(s);setShowSubs(false);}} className="w-full p-2 rounded-xl border hover:border-primary-300 hover:bg-primary-50 text-left mb-1 flex justify-between"><div><p className="font-medium text-sm">{s.medicineName}</p><p className="text-[10px] text-gray-400">{s.manufacturer}</p></div><div className="text-right"><p className="font-bold text-primary-600">{formatCurrency(s.salePrice)}</p><p className="text-[10px]">Stock:{s.currentStock}</p></div></button>)}</div></div></div>}
-      {showReceipt&&lastSale&&<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={()=>setShowReceipt(false)}><div className="bg-white rounded-2xl w-full max-w-sm max-h-[85vh] overflow-y-auto" onClick={e=>e.stopPropagation()}><div className="p-5 text-center border-b border-dashed"><p className="font-heading font-bold text-lg">{storeInfo?.storeName||'MedStore Pro'}</p><p className="text-[10px] text-gray-400">{storeInfo?.address?.city} • {storeInfo?.phone}</p><p className="text-xs font-mono font-bold mt-1">{lastSale.invoiceNo}</p></div><div className="p-4"><table className="w-full text-xs mb-3"><thead><tr className="border-b"><th className="text-left py-1">Item</th><th className="text-right">Qty</th><th className="text-right">Amt</th></tr></thead><tbody>{lastSale.items?.map((it,i)=><tr key={i} className="border-b border-gray-50"><td className="py-1">{it.medicineName}</td><td className="text-right">{it.quantity}</td><td className="text-right">{formatCurrency(it.lineTotal)}</td></tr>)}</tbody></table><div className="border-t border-dashed pt-2 space-y-1 text-xs"><div className="flex justify-between font-bold text-sm"><span>TOTAL</span><span>{formatCurrency(lastSale.netTotal)}</span></div>{lastSale.changeGiven>0&&<div className="flex justify-between text-primary-600"><span>Change</span><span>{formatCurrency(lastSale.changeGiven)}</span></div>}</div></div><div className="p-3 border-t flex gap-2"><button onClick={printReceipt} className="btn-secondary flex-1 flex items-center justify-center gap-1 text-sm"><HiOutlinePrinter className="w-4 h-4"/>Print</button><button onClick={()=>setShowReceipt(false)} className="btn-primary flex-1 text-sm">New Sale</button></div></div></div>}
+      {showReceipt&&lastSale&&<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={()=>setShowReceipt(false)}><div className="bg-white rounded-2xl w-full max-w-sm max-h-[85vh] overflow-y-auto" onClick={e=>e.stopPropagation()}><div className="p-5 text-center border-b border-dashed"><p className="font-heading font-bold text-lg">{storeInfo?.storeName||'MedStore Pro'}</p><p className="text-[10px] text-gray-400">{storeInfo?.address?.city} • {storeInfo?.phone}</p><p className="text-xs font-mono font-bold mt-1">{lastSale.invoiceNo}</p></div><div className="p-4"><table className="w-full text-xs mb-3"><thead><tr className="border-b"><th className="text-left py-1">Item</th><th className="text-right">Qty</th><th className="text-right">Amt</th></tr></thead><tbody>{lastSale.items?.map((it,i)=><tr key={i} className="border-b border-gray-50"><td className="py-1">{it.medicineName}</td><td className="text-right">{it.quantity}</td><td className="text-right">{formatCurrency(it.lineTotal)}</td></tr>)}</tbody></table><div className="border-t border-dashed pt-2 space-y-1 text-xs"><div className="flex justify-between font-bold text-sm"><span>TOTAL</span><span>{formatCurrency(lastSale.netTotal)}</span></div>{lastSale.changeGiven>0&&<div className="flex justify-between text-primary-600"><span>Change</span><span>{formatCurrency(lastSale.changeGiven)}</span></div>}</div></div><div className="p-3 border-t flex flex-wrap gap-2"><button onClick={printReceipt} className="btn-secondary flex-1 min-w-[80px] flex items-center justify-center gap-1 text-sm"><HiOutlinePrinter className="w-4 h-4"/>Print</button><button onClick={shareWhatsApp} className="flex-1 min-w-[80px] flex items-center justify-center gap-1 text-sm px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-medium" title="Share receipt on WhatsApp"><FaWhatsapp className="w-4 h-4"/>WhatsApp</button><button onClick={()=>setShowReceipt(false)} className="btn-primary flex-1 min-w-[80px] text-sm">New Sale</button></div></div></div>}
     </div>
   );
 }
