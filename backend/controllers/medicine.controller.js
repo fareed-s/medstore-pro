@@ -256,6 +256,47 @@ exports.updateMedicine = asyncHandler(async (req, res) => {
   res.json({ success: true, data: medicine });
 });
 
+// @desc    Set current stock directly from the Details grid. Mirrors the
+//          batch flow so a correction in one place reflects in the other:
+//            - no batches:   write currentStock directly on the medicine.
+//            - exactly one:  push the new total into that batch (clamps
+//                            quantity up too so remaining ≤ original).
+//            - 2+ batches:   refuse — the user must edit the specific
+//                            batch that has the bad number, otherwise we
+//                            can't decide which batch to adjust.
+// @route   PUT /api/medicines/:id/stock
+//          body: { currentStock: number }
+exports.setCurrentStock = asyncHandler(async (req, res) => {
+  const newStock = Math.max(0, Number(req.body.currentStock));
+  if (!Number.isFinite(newStock)) {
+    return res.status(400).json({ success: false, message: 'Invalid stock value' });
+  }
+
+  const medicine = await Medicine.findOne({ _id: req.params.id, ...req.tenantFilter });
+  if (!medicine) return res.status(404).json({ success: false, message: 'Medicine not found' });
+
+  const batches = await Batch.find({ medicineId: medicine._id, storeId: medicine.storeId });
+
+  if (batches.length === 0) {
+    medicine.currentStock = newStock;
+    await medicine.save();
+  } else if (batches.length === 1) {
+    const b = batches[0];
+    b.remainingQty = newStock;
+    if (b.quantity < newStock) b.quantity = newStock;
+    await b.save();
+    await require('./batch.controller').recalcStock(medicine._id, medicine.storeId);
+  } else {
+    return res.status(409).json({
+      success: false,
+      message: 'This medicine has multiple batches — edit a specific batch below to change stock.',
+    });
+  }
+
+  const fresh = await Medicine.findById(medicine._id);
+  res.json({ success: true, data: fresh });
+});
+
 // @desc    Delete (soft) medicine
 // @route   DELETE /api/medicines/:id
 exports.deleteMedicine = asyncHandler(async (req, res) => {

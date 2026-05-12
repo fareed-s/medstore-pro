@@ -85,15 +85,23 @@ exports.createBatch = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: batch, newStock });
 });
 
-// @desc    Update batch
+// @desc    Update batch. Both `remainingQty` (current) and `quantity`
+//          (original-received) are editable so the InventoryStaff can
+//          correct a wrong opening-stock entry. If only the original is
+//          changed and it ends up smaller than the current remaining,
+//          we clamp the remaining down to match (you can't have 80
+//          remaining of a 50-unit batch).
 exports.updateBatch = asyncHandler(async (req, res) => {
   const batch = await Batch.findOne({ _id: req.params.id, storeId: req.user.storeId });
   if (!batch) return res.status(404).json({ success: false, message: 'Batch not found' });
 
-  const { batchNumber, expiryDate, remainingQty, costPrice, salePrice, mrp } = req.body;
+  const { batchNumber, expiryDate, remainingQty, quantity, costPrice, salePrice, mrp } = req.body;
   if (batchNumber) batch.batchNumber = batchNumber;
   if (expiryDate) batch.expiryDate = new Date(expiryDate);
-  if (remainingQty !== undefined) batch.remainingQty = remainingQty;
+  if (remainingQty !== undefined) batch.remainingQty = Math.max(0, Number(remainingQty));
+  if (quantity     !== undefined) batch.quantity     = Math.max(0, Number(quantity));
+  // Invariant: remaining ≤ original. Clamp if the edit broke it.
+  if (batch.remainingQty > batch.quantity) batch.remainingQty = batch.quantity;
   if (costPrice !== undefined) batch.costPrice = costPrice;
   if (salePrice !== undefined) batch.salePrice = salePrice;
   if (mrp !== undefined) batch.mrp = mrp;

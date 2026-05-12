@@ -20,4 +20,10 @@ router.route('/:id')
   .put(authorize('SuperAdmin', 'StoreAdmin', 'Pharmacist'), tenantFilter, ctrl.updateMedicine)
   .delete(authorize('SuperAdmin', 'StoreAdmin'), tenantFilter, ctrl.deleteMedicine);
 
+router.put('/:id/stock',
+  authorize('SuperAdmin', 'StoreAdmin', 'Pharmacist', 'InventoryStaff'),
+  tenantFilter,
+  ctrl.setCurrentStock,
+);
+
 module.exports = router;

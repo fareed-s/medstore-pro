@@ -24,6 +24,11 @@ export default function MedicineDetailPage() {
   const [editForm, setEditForm] = useState({});
   const [savingEdit, setSavingEdit] = useState(false);
 
+  // Inline edit for the "Current Stock" cell in the Details grid.
+  const [editingStock, setEditingStock] = useState(false);
+  const [stockDraft, setStockDraft] = useState(0);
+  const [savingStock, setSavingStock] = useState(false);
+
   useEffect(() => { fetchMedicine(); }, [id]);
 
   const fetchMedicine = async () => {
@@ -53,6 +58,7 @@ export default function MedicineDetailPage() {
       batchNumber: b.batchNumber || '',
       expiryDate: b.expiryDate ? b.expiryDate.slice(0, 10) : '',
       remainingQty: b.remainingQty ?? 0,
+      quantity: b.quantity ?? 0, // editable Original
       costPrice: b.costPrice ?? 0,
       salePrice: b.salePrice ?? 0,
       mrp: b.mrp ?? 0,
@@ -64,12 +70,18 @@ export default function MedicineDetailPage() {
       toast.error('Batch number and expiry date are required');
       return;
     }
+    const remaining = Number(editForm.remainingQty) || 0;
+    const original  = Number(editForm.quantity)     || 0;
+    if (remaining > original) {
+      toast.warning(`Remaining (${remaining}) can't exceed original (${original}) — clamping.`);
+    }
     setSavingEdit(true);
     try {
       await API.put(`/batches/${editingBatchId}`, {
         batchNumber: editForm.batchNumber,
         expiryDate: editForm.expiryDate,
-        remainingQty: Number(editForm.remainingQty) || 0,
+        remainingQty: remaining,
+        quantity: original,
         costPrice: Number(editForm.costPrice) || 0,
         salePrice: Number(editForm.salePrice) || 0,
         mrp: Number(editForm.mrp) || 0,
@@ -81,6 +93,32 @@ export default function MedicineDetailPage() {
       toast.error(err.response?.data?.message || 'Update failed');
     } finally {
       setSavingEdit(false);
+    }
+  };
+
+  // Current Stock inline edit (from the Details grid). Cascades to the
+  // matching batch on the server side — see backend setCurrentStock.
+  const startEditStock = () => {
+    setStockDraft(med.currentStock ?? 0);
+    setEditingStock(true);
+  };
+  const cancelEditStock = () => { setEditingStock(false); };
+  const saveStockEdit = async () => {
+    const next = Number(stockDraft);
+    if (!Number.isFinite(next) || next < 0) {
+      toast.error('Enter a valid stock value');
+      return;
+    }
+    setSavingStock(true);
+    try {
+      await API.put(`/medicines/${id}/stock`, { currentStock: next });
+      toast.success('Current stock updated');
+      setEditingStock(false);
+      fetchMedicine();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Update failed');
+    } finally {
+      setSavingStock(false);
     }
   };
   const deleteBatch = async (b) => {
@@ -157,6 +195,46 @@ export default function MedicineDetailPage() {
       <div className="card mb-6">
         <h3 className="font-heading font-semibold text-gray-900 mb-4">Details</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-y-3 gap-x-6 text-sm">
+          {/* Current Stock — same value as the tile above, editable inline.
+              On save it cascades to the matching batch via PUT /:id/stock. */}
+          <div className="md:col-span-2">
+            <p className="text-gray-400 text-xs flex items-center gap-2">
+              Current Stock
+              {(med.batches?.length || 0) > 1 && (
+                <span className="text-[10px] text-amber-600">— multiple batches, edit below</span>
+              )}
+            </p>
+            {editingStock ? (
+              <div className="flex items-center gap-1.5 mt-1">
+                <input
+                  type="number"
+                  min="0"
+                  className="input-field text-sm py-1.5 w-24"
+                  value={stockDraft}
+                  onChange={(e) => setStockDraft(e.target.value)}
+                  autoFocus
+                />
+                <button onClick={saveStockEdit} disabled={savingStock}
+                  title="Save" className="p-1.5 rounded hover:bg-emerald-100 text-emerald-600 disabled:opacity-50">
+                  <HiOutlineCheck className="w-4 h-4" />
+                </button>
+                <button onClick={cancelEditStock} disabled={savingStock}
+                  title="Cancel" className="p-1.5 rounded hover:bg-gray-100 text-gray-500">
+                  <HiOutlineX className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 mt-0.5">
+                <p className="text-gray-800 font-bold text-base">{med.currentStock ?? 0}</p>
+                {hasRole('SuperAdmin', 'StoreAdmin', 'InventoryStaff', 'Pharmacist') && (med.batches?.length || 0) <= 1 && (
+                  <button onClick={startEditStock}
+                    title="Edit current stock" className="p-1 rounded hover:bg-primary-50 text-primary-600">
+                    <HiOutlinePencilAlt className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
           {[
             ['Category', med.category], ['Sub Category', med.subCategory],
             ['Therapeutic Class', med.therapeuticClass], ['Dosage Form', med.dosageForm],
@@ -236,7 +314,11 @@ export default function MedicineDetailPage() {
                           <input type="number" min="0" className="input-field text-xs py-1.5 w-20" value={editForm.remainingQty}
                             onChange={(e) => setEditForm({ ...editForm, remainingQty: e.target.value })} />
                         </td>
-                        <td className="px-4 py-2 text-gray-400">{b.quantity}</td>
+                        <td className="px-4 py-2">
+                          <input type="number" min="0" className="input-field text-xs py-1.5 w-20" value={editForm.quantity}
+                            onChange={(e) => setEditForm({ ...editForm, quantity: e.target.value })}
+                            title="Original received quantity — fix typos here" />
+                        </td>
                         <td className="px-4 py-2">
                           <div className="flex items-center justify-end gap-1">
                             <button onClick={saveBatchEdit} disabled={savingEdit}
@@ -283,7 +365,13 @@ export default function MedicineDetailPage() {
             </table>
           </div>
         ) : (
-          <p className="text-gray-400 text-center py-8">No batches yet. Add stock to get started.</p>
+          <div className="text-center py-10 bg-gray-50/60 rounded-xl border border-dashed border-gray-200">
+            <p className="text-3xl mb-1">📦</p>
+            <p className="text-gray-500 font-medium text-sm">No batches added</p>
+            <p className="text-gray-400 text-xs mt-1">
+              Batches are optional — set Current Stock above, or click <b>+ Add Batch</b> to track expiry and lot details.
+            </p>
+          </div>
         )}
       </div>
     </div>
