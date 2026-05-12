@@ -38,7 +38,7 @@ export const PAGE_SHORTCUTS = [
       { key: 'F2',     label: 'Focus search / scan box' },
       { key: 'F5',     label: 'Hold current bill' },
       { key: 'F10',    label: 'Complete sale' },
-      { key: 'Escape', label: 'Close open modal / receipt' },
+      { key: 'Escape', label: 'Close open modal — or exit POS if cart is empty' },
     ],
   },
 ];

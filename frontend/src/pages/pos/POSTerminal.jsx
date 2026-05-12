@@ -59,10 +59,21 @@ export default function POSTerminal() {
       if(e.key==='F2'){e.preventDefault();searchRef.current?.focus();}
       if(e.key==='F5'){e.preventDefault();holdBill();}
       if(e.key==='F10'){e.preventDefault();completeSale();}
-      if(e.key==='Escape'){setShowReceipt(false);setShowHeld(false);setShowInteractions(false);setShowSubs(false);}
+      if(e.key==='Escape'){
+        // Contextual: close whichever modal is open first. If no modal is
+        // open AND the cart is empty, leave the POS entirely — quick way
+        // out for cashiers who don't want to mouse over to the X.
+        if (showReceipt || showHeld || showInteractions || showSubs) {
+          setShowReceipt(false); setShowHeld(false);
+          setShowInteractions(false); setShowSubs(false);
+        } else if (cart.length === 0) {
+          e.preventDefault();
+          navigate('/dashboard');
+        }
+      }
     };
     window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h);
-  },[cart,payments]);
+  },[cart,payments,showReceipt,showHeld,showInteractions,showSubs,navigate]);
 
   const fetchStore = async()=>{try{const{data}=await API.get('/stores');setStoreInfo(data.data);}catch{}};
   const fetchHeldBills = async()=>{try{const{data}=await API.get('/sales/held');setHeldBills(data.data);}catch{}};
