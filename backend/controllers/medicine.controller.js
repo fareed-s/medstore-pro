@@ -1,6 +1,5 @@
 const Medicine = require('../models/Medicine');
 const MasterMedicine = require('../models/MasterMedicine');
-const MedicineSuggestion = require('../models/MedicineSuggestion');
 const Batch = require('../models/Batch');
 const Category = require('../models/Category');
 const ActivityLog = require('../models/ActivityLog');
@@ -175,62 +174,58 @@ exports.createMedicine = asyncHandler(async (req, res) => {
     entityType: 'Medicine',
   });
 
-  // ── CROWDSOURCED CATALOG: queue for SuperAdmin review ─────────────
-  // If this medicine name isn't already in MasterMedicine, push it into
-  // the MedicineSuggestion queue. Uniqueness on medicineName (case-
-  // insensitive) means a second store adding the same drug will hit the
-  // existing row — we bump contributorCount + add their storeId instead
-  // of creating a duplicate. Errors here never block the user's create.
+  // ── CROWDSOURCED CATALOG: auto-merge into MasterMedicine ──────────
+  // One atomic upsert keyed on (medicineName + strength), case- and
+  // whitespace-insensitive via collation strength 1. If the (name, strength)
+  // pair already exists, this is a no-op — no duplicate, nothing for the
+  // SuperAdmin to review. If it's truly new, $setOnInsert seeds the master
+  // row from the store's submission so other stores benefit immediately.
+  //
+  // Wrapped in try/catch so a master-side write failure never blocks the
+  // cashier's create flow. Single DB roundtrip — no separate find first.
   try {
-    const collation = { locale: 'en', strength: 2 };
-    const inMaster = await MasterMedicine.findOne({ medicineName: medicine.medicineName }).collation(collation).lean();
-    if (!inMaster) {
-      await MedicineSuggestion.findOneAndUpdate(
-        { medicineName: medicine.medicineName },
-        {
-          $setOnInsert: {
-            medicineName: medicine.medicineName,
-            genericName: medicine.genericName,
-            manufacturer: medicine.manufacturer,
-            barcode: medicine.barcode,
-            sku: medicine.sku,
-            category: medicine.category,
-            subCategory: medicine.subCategory,
-            therapeuticClass: medicine.therapeuticClass,
-            schedule: medicine.schedule,
-            formulation: medicine.formulation,
-            packSize: medicine.packSize,
-            unitsPerPack: medicine.unitsPerPack,
-            unitOfMeasure: medicine.unitOfMeasure,
-            strength: medicine.strength,
-            dosageForm: medicine.dosageForm,
-            costPrice: medicine.costPrice,
-            mrp: medicine.mrp,
-            salePrice: medicine.salePrice,
-            taxRate: medicine.taxRate,
-            lowStockThreshold: medicine.lowStockThreshold,
-            reorderLevel: medicine.reorderLevel,
-            reorderQuantity: medicine.reorderQuantity,
-            storageCondition: medicine.storageCondition,
-            description: medicine.description,
-            status: 'pending',
-            firstContributedBy: req.user._id,
-          },
-          $addToSet: { contributedByStoreIds: storeId },
-          $inc: { contributorCount: 0 }, // count recomputed below from set size
+    await MasterMedicine.findOneAndUpdate(
+      {
+        medicineName: medicine.medicineName,
+        strength: medicine.strength || null,
+      },
+      {
+        $setOnInsert: {
+          medicineName: medicine.medicineName,
+          genericName: medicine.genericName,
+          manufacturer: medicine.manufacturer,
+          barcode: medicine.barcode,
+          sku: medicine.sku,
+          category: medicine.category,
+          subCategory: medicine.subCategory,
+          therapeuticClass: medicine.therapeuticClass,
+          schedule: medicine.schedule,
+          formulation: medicine.formulation,
+          packSize: medicine.packSize,
+          unitsPerPack: medicine.unitsPerPack,
+          unitOfMeasure: medicine.unitOfMeasure,
+          strength: medicine.strength,
+          dosageForm: medicine.dosageForm,
+          costPrice: medicine.costPrice,
+          mrp: medicine.mrp,
+          salePrice: medicine.salePrice,
+          taxRate: medicine.taxRate,
+          lowStockThreshold: medicine.lowStockThreshold,
+          reorderLevel: medicine.reorderLevel,
+          reorderQuantity: medicine.reorderQuantity,
+          storageCondition: medicine.storageCondition,
+          description: medicine.description,
+          uploadedBy: req.user._id,
         },
-        { upsert: true, new: true, collation }
-      );
-      // Recompute contributorCount from the actual set size — $inc would
-      // double-count when the same store creates the same name twice.
-      await MedicineSuggestion.updateOne(
-        { medicineName: medicine.medicineName },
-        [{ $set: { contributorCount: { $size: '$contributedByStoreIds' } } }],
-        { collation }
-      );
-    }
+      },
+      { upsert: true, collation: { locale: 'en', strength: 1 } }
+    );
   } catch (err) {
-    console.error('[SUGGESTION-QUEUE] non-fatal upsert failure:', err.message);
+    // E11000 here means a parallel insert won the race — harmless, the
+    // row already exists. Anything else is logged but never bubbled up.
+    if (err.code !== 11000) {
+      console.error('[MASTER-AUTO-MERGE] non-fatal upsert failure:', err.message);
+    }
   }
 
   res.status(201).json({ success: true, data: medicine });

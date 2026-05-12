@@ -63,10 +63,14 @@ const masterMedicineSchema = new mongoose.Schema({
   uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 }, { timestamps: true });
 
-// Case-insensitive uniqueness on medicineName so the catalog has one row per drug.
-masterMedicineSchema.index({ medicineName: 1 }, {
-  unique: true,
-  collation: { locale: 'en', strength: 2 },
-});
+// Uniqueness on (medicineName + strength) so the catalog has one row per
+// (drug, strength) combination — "Aspirin 500mg" and "Aspirin 250mg" are
+// separate entries, but "aspirin 500mg" and "Aspirin 500mg" collapse to
+// one. Collation strength 1 also ignores whitespace differences so
+// "500 mg" and "500mg" are treated as the same strength.
+masterMedicineSchema.index(
+  { medicineName: 1, strength: 1 },
+  { unique: true, collation: { locale: 'en', strength: 1 } }
+);
 
 module.exports = mongoose.model('MasterMedicine', masterMedicineSchema);
