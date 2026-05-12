@@ -49,6 +49,7 @@ import InsuranceClaimsPage from './pages/customers/InsuranceClaimsPage';
 import StockTransferPage from './pages/transfers/StockTransferPage';
 import AdminStoresPage from './pages/admin/AdminStoresPage';
 import MasterCatalogPage from './pages/admin/MasterCatalogPage';
+import MedicineSuggestionsPage from './pages/admin/MedicineSuggestionsPage';
 import QuickStockInPage from './pages/inventory/QuickStockInPage';
 import OfflineSyncPage from './pages/settings/OfflineSyncPage';
 import SecureLayout from './components/layout/SecureLayout';
@@ -169,6 +170,7 @@ export default function App() {
         {/* SuperAdmin Platform Management */}
         <Route path="admin/stores" element={<ProtectedRoute roles={['SuperAdmin']}><AdminStoresPage /></ProtectedRoute>} />
         <Route path="admin/master-catalog" element={<ProtectedRoute roles={['SuperAdmin']}><MasterCatalogPage /></ProtectedRoute>} />
+        <Route path="admin/medicine-suggestions" element={<ProtectedRoute roles={['SuperAdmin']}><MedicineSuggestionsPage /></ProtectedRoute>} />
         <Route path="sales" element={<ProtectedRoute roles={['SuperAdmin','StoreAdmin','Pharmacist','Cashier']}><SalesPage /></ProtectedRoute>} />
         <Route path="sales/:id" element={<SaleDetailPage />} />
         <Route path="sales/:id/return" element={<ProtectedRoute roles={['SuperAdmin','StoreAdmin','Pharmacist']}><SaleReturnPage /></ProtectedRoute>} />

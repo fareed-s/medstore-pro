@@ -20,6 +20,10 @@ router.get('/stores/:id/controlled-module/logs', ctrl.getControlledModuleLogs);
 router.delete('/stores/:id', ctrl.deleteStore);
 router.post('/medicines/bulk-master', ctrl.bulkMasterMedicines);
 router.get('/medicines/master/stats', ctrl.getMasterStats);
+router.get('/medicine-suggestions', ctrl.listMedicineSuggestions);
+router.get('/medicine-suggestions/pending-count', ctrl.getMedicineSuggestionsPendingCount);
+router.put('/medicine-suggestions/:id/approve', ctrl.approveMedicineSuggestion);
+router.put('/medicine-suggestions/:id/reject', ctrl.rejectMedicineSuggestion);
 router.get('/users', ctrl.getUsers);
 router.put('/users/:id', ctrl.updateUser);
 

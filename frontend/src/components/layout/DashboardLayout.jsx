@@ -17,9 +17,10 @@ import {
 
 // SuperAdmin (SaaS owner) navigation — kept lean: only what we actively use.
 const superAdminNav = [
-  { path: '/dashboard',            label: 'Platform Overview', icon: HiOutlineViewGrid },
-  { path: '/admin/stores',         label: 'All Stores',        icon: HiOutlineOfficeBuilding },
-  { path: '/admin/master-catalog', label: 'Master Catalog',    icon: HiOutlineUpload },
+  { path: '/dashboard',                  label: 'Platform Overview', icon: HiOutlineViewGrid },
+  { path: '/admin/stores',               label: 'All Stores',        icon: HiOutlineOfficeBuilding },
+  { path: '/admin/master-catalog',       label: 'Master Catalog',    icon: HiOutlineUpload },
+  { path: '/admin/medicine-suggestions', label: 'Suggestions',       icon: HiOutlineInboxIn },
 ];
 
 // Store-side navigation. `module` ties each entry to a permission key.
