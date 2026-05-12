@@ -191,6 +191,24 @@ export default function QuickStockInPage() {
     }
   };
 
+  // Page-scoped shortcuts:
+  //   Ctrl+S        → save all entries (mirrors the toolbar button)
+  //   Ctrl+Enter    → add a fresh blank row
+  // Re-bound every render so the handler closures see the latest rows.
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        if (!saving) handleSave();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        addRow();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   const grand = useMemo(() => {
     return rows.reduce((sum, r) => sum + computeTotals(r).net, 0);
   }, [rows]);

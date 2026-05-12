@@ -5,6 +5,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { ROLE_LABELS } from '../../utils/helpers';
 import SubscriptionBanner from '../SubscriptionBanner';
 import NetworkBadge from './NetworkBadge';
+import useGlobalShortcuts from '../../hooks/useGlobalShortcuts';
 import {
   HiOutlineViewGrid, HiOutlineCube, HiOutlineTag, HiOutlineArchive, HiOutlineClock,
   HiOutlineUsers, HiOutlineCog, HiOutlineLogout, HiOutlineMenu, HiOutlineBell,
@@ -13,6 +14,7 @@ import {
   HiOutlineShoppingCart, HiOutlineTruck, HiOutlineDocumentText, HiOutlineInboxIn,
   HiOutlineOfficeBuilding, HiOutlineUpload, HiOutlineLightningBolt,
   HiOutlineUser, HiOutlineSun, HiOutlineMoon, HiOutlineCloud,
+  HiOutlineKey,
 } from 'react-icons/hi';
 
 // SuperAdmin (SaaS owner) navigation — kept lean: only what we actively use.
@@ -56,6 +58,7 @@ const storeNav = [
   { path: '/barcode-labels',         label: 'Barcode Labels',    icon: HiOutlineClipboardList,    module: 'medicines' },
   { path: '/activity-log',           label: 'Audit Log',         icon: HiOutlineClipboardList,    module: 'settings' },
   { path: '/settings/offline-sync',  label: 'Offline Sync',      icon: HiOutlineCloud },
+  { path: '/shortcuts',              label: 'Shortcut Keys',     icon: HiOutlineKey },
   { path: '/settings',               label: 'Settings',          icon: HiOutlineCog,              module: 'settings' },
 ];
 
@@ -63,6 +66,9 @@ export default function DashboardLayout() {
   const { user, logout, can } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // App-wide F-key navigation. Skipped on /pos which owns its own keys.
+  useGlobalShortcuts();
 
   const handleLogout = async () => {
     await logout();
