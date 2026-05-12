@@ -8,7 +8,7 @@ const grnItemSchema = new mongoose.Schema({
   freeQty: { type: Number, default: 0 },
   damagedQty: { type: Number, default: 0 },
   shortQty: { type: Number, default: 0 },
-  batchNumber: { type: String, required: true },
+  batchNumber: { type: String }, // optional — matches the Batch model
   expiryDate: { type: Date, required: true },
   manufacturingDate: Date,
   unitCost: { type: Number, required: true },

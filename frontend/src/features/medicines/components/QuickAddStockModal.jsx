@@ -27,7 +27,6 @@ export default function QuickAddStockModal({ medicine, onClose }) {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!form.batchNumber.trim()) { toast.error('Batch number required'); return; }
     if (!form.expiryDate)         { toast.error('Expiry date required');  return; }
     const qty = parseInt(form.quantity, 10) || 0;
     if (qty <= 0)                 { toast.error('Quantity must be > 0');  return; }
@@ -36,7 +35,7 @@ export default function QuickAddStockModal({ medicine, onClose }) {
     try {
       await API.post('/batches', {
         medicineId:  medicine._id,
-        batchNumber: form.batchNumber.trim(),
+        batchNumber: form.batchNumber.trim() || undefined,
         expiryDate:  form.expiryDate,
         quantity:    qty,
         costPrice:   parseFloat(form.costPrice) || 0,
@@ -71,8 +70,8 @@ export default function QuickAddStockModal({ medicine, onClose }) {
         <form onSubmit={submit} className="p-5">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="label">Batch Number *</label>
-              <input className="input-field" value={form.batchNumber} onChange={set('batchNumber')} autoFocus required />
+              <label className="label">Batch Number</label>
+              <input className="input-field" value={form.batchNumber} onChange={set('batchNumber')} autoFocus placeholder="Optional" />
             </div>
             <div>
               <label className="label">Expiry Date *</label>

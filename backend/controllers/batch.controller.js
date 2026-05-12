@@ -257,8 +257,8 @@ exports.quickStockIn = asyncHandler(async (req, res) => {
     const r = rows[i];
     const rowNo = i + 1;
     if (!r.medicineId)   { errors.push({ row: rowNo, error: 'Medicine not selected' });   continue; }
-    if (!r.batchNumber)  { errors.push({ row: rowNo, error: 'Batch number required' });   continue; }
     if (!r.expiryDate)   { errors.push({ row: rowNo, error: 'Expiry date required' });    continue; }
+    // batchNumber is optional — small pharmacies often skip lot tracking.
 
     const qty   = parseInt(r.quantity)      || 0;
     const bonus = parseInt(r.bonusQuantity) || 0;

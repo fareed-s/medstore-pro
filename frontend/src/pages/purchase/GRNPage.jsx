@@ -63,7 +63,7 @@ export default function GRNPage() {
     if (!supplierId) return toast.error('Select supplier');
     if (items.length === 0) return toast.error('Add items');
     for (const item of items) {
-      if (!item.batchNumber) return toast.error(`Batch number required for ${item.medicineName}`);
+      // batchNumber is optional — small pharmacies often skip lot tracking
       if (!item.expiryDate) return toast.error(`Expiry date required for ${item.medicineName}`);
       if (item.receivedQty <= 0) return toast.error(`Received qty required for ${item.medicineName}`);
     }
@@ -127,7 +127,7 @@ export default function GRNPage() {
             <div className="card mb-4 overflow-x-auto p-3">
               <table className="w-full text-sm">
                 <thead><tr className="table-header text-[10px]">
-                  <th className="px-2 py-1">Medicine</th><th className="px-2 py-1">Batch # *</th><th className="px-2 py-1">Expiry *</th>
+                  <th className="px-2 py-1">Medicine</th><th className="px-2 py-1">Batch #</th><th className="px-2 py-1">Expiry *</th>
                   <th className="px-2 py-1">Recv Qty *</th><th className="px-2 py-1">Free</th>
                   <th className="px-2 py-1">Cost</th><th className="px-2 py-1">MRP</th><th className="px-2 py-1">Sale</th>
                   <th className="px-2 py-1 text-right">Total</th><th className="px-2 py-1"></th>

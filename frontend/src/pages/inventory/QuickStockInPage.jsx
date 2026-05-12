@@ -140,7 +140,7 @@ export default function QuickStockInPage() {
     let ok = true;
     for (const r of cleaned) {
       if (!r.medicineId)  { r.error = 'Pick a medicine (scan code or use search)'; ok = false; continue; }
-      if (!r.batchNumber) { r.error = 'Batch number required'; ok = false; continue; }
+      // batchNumber is optional — skip lot tracking is fine for small pharmacies
       if (!r.expiryDate)  { r.error = 'Expiry date required'; ok = false; continue; }
       const qty = parseInt(r.quantity) || 0;
       if (qty <= 0)       { r.error = 'Quantity > 0'; ok = false; continue; }

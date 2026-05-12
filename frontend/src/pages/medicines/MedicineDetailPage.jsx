@@ -66,8 +66,8 @@ export default function MedicineDetailPage() {
   };
   const cancelEditBatch = () => { setEditingBatchId(null); setEditForm({}); };
   const saveBatchEdit = async () => {
-    if (!editForm.batchNumber || !editForm.expiryDate) {
-      toast.error('Batch number and expiry date are required');
+    if (!editForm.expiryDate) {
+      toast.error('Expiry date is required');
       return;
     }
     const remaining = Number(editForm.remainingQty) || 0;
@@ -267,7 +267,7 @@ export default function MedicineDetailPage() {
         {showBatchForm && (
           <form onSubmit={addBatch} className="bg-emerald-50/50 rounded-xl p-4 mb-4 border border-emerald-100">
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              <div><label className="label">Batch Number *</label><input className="input-field" value={batchForm.batchNumber} onChange={(e) => setBatchForm({ ...batchForm, batchNumber: e.target.value })} required /></div>
+              <div><label className="label">Batch Number</label><input className="input-field" value={batchForm.batchNumber} onChange={(e) => setBatchForm({ ...batchForm, batchNumber: e.target.value })} placeholder="Optional" /></div>
               <div><label className="label">Expiry Date *</label><input type="date" className="input-field" value={batchForm.expiryDate} onChange={(e) => setBatchForm({ ...batchForm, expiryDate: e.target.value })} required /></div>
               <div><label className="label">Quantity *</label><input type="number" min="1" className="input-field" value={batchForm.quantity} onChange={(e) => setBatchForm({ ...batchForm, quantity: e.target.value })} required /></div>
               <div><label className="label">Cost Price</label><input type="number" step="0.01" className="input-field" value={batchForm.costPrice} onChange={(e) => setBatchForm({ ...batchForm, costPrice: parseFloat(e.target.value) })} /></div>

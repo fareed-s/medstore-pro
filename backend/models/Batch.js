@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const batchSchema = new mongoose.Schema({
   storeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Store', required: true },
   medicineId: { type: mongoose.Schema.Types.ObjectId, ref: 'Medicine', required: true },
-  batchNumber: { type: String, required: true, trim: true },
+  batchNumber: { type: String, trim: true }, // optional — small pharmacies often skip lot tracking
   expiryDate: { type: Date, required: true },
   manufacturingDate: Date,
   quantity: { type: Number, required: true, min: 0 },
